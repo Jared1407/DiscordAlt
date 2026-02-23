@@ -1,0 +1,281 @@
+/* ═══════════════════════════════════════════════════
+   Chat View — Messages, Input, Timestamps
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Messages Container ─── */
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--sp-4) 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.messages-container__inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 100%;
+    padding: 0 var(--sp-4);
+}
+
+/* ─── Date Separator ─── */
+.date-separator {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) 0;
+}
+
+.date-separator__line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+}
+
+.date-separator__text {
+    font-size: var(--font-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ─── Message Group ─── */
+.message-group {
+    display: flex;
+    gap: var(--sp-4);
+    padding: 2px var(--sp-4);
+    margin: 0 calc(-1 * var(--sp-4));
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+}
+
+.message-group:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.message-group--start {
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-2);
+}
+
+.message-group__avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.message-group__avatar .avatar-letter {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: var(--font-md);
+    color: white;
+}
+
+.message-group__avatar--collapsed {
+    visibility: hidden;
+    width: 40px;
+}
+
+.message-group__content {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ─── Message Header (sender + time) ─── */
+.message-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin-bottom: 2px;
+}
+
+.message-header__sender {
+    font-size: var(--font-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast);
+}
+
+.message-header__sender:hover {
+    text-decoration: underline;
+}
+
+.message-header__time {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+}
+
+/* Inline timestamp for grouped messages */
+.message-inline-time {
+    font-size: var(--font-xs);
+    color: transparent;
+    min-width: 40px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: color var(--transition-fast);
+    cursor: default;
+    user-select: none;
+}
+
+.message-group:hover .message-inline-time {
+    color: var(--text-muted);
+}
+
+/* ─── Message Body ─── */
+.message-body {
+    font-size: var(--font-md);
+    line-height: 1.5;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.message-body code {
+    padding: 2px 6px;
+    background: var(--bg-dark);
+    border-radius: var(--radius-sm);
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.875em;
+}
+
+/* ─── Welcome Message ─── */
+.welcome-message {
+    padding: var(--sp-4) 0 var(--sp-6);
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: var(--sp-4);
+}
+
+.welcome-message__icon {
+    width: 68px;
+    height: 68px;
+    border-radius: var(--radius-lg);
+    background: var(--bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--sp-3);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.welcome-message__title {
+    font-size: var(--font-2xl);
+    font-weight: 700;
+    margin-bottom: var(--sp-2);
+}
+
+.welcome-message__desc {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ─── Message Input ─── */
+.message-input-wrapper {
+    padding: 0 var(--sp-4) var(--sp-4);
+    flex-shrink: 0;
+}
+
+.message-input {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--sp-2);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-2) var(--sp-3);
+    transition: border-color var(--transition-fast);
+}
+
+.message-input:focus-within {
+    border-color: var(--accent-primary);
+}
+
+.message-input__field {
+    flex: 1;
+    min-height: 24px;
+    max-height: 120px;
+    padding: var(--sp-2) 0;
+    resize: none;
+    line-height: 1.5;
+    font-size: var(--font-md);
+    color: var(--text-primary);
+    overflow-y: auto;
+}
+
+.message-input__field::placeholder {
+    color: var(--text-muted);
+}
+
+.message-input__send {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.message-input__send:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.message-input__send--active {
+    color: var(--accent-primary);
+}
+
+.message-input__send svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ─── Scroll to bottom ─── */
+.scroll-bottom-btn {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    animation: slideUp var(--transition-normal) ease-out;
+    z-index: 10;
+}
+
+.scroll-bottom-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transform: translateX(-50%) translateY(-2px);
+}
+
+/* ─── Loading state ─── */
+.messages-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: var(--sp-4);
+    color: var(--text-muted);
+}

@@ -1,0 +1,48 @@
+# Configuration file for Synapse.
+#
+# This is a YAML file: see [1] for a quick introduction. Note in particular
+# that *indentation is important*: all the elements of a list or dictionary
+# should have the same indentation.
+#
+# [1] https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html
+#
+# For more information on how to configure Synapse, including a complete accounting of
+# each option, go to docs/usage/configuration/config_documentation.md or
+# https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html
+server_name: "192.168.0.1"
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8008
+    resources:
+    - compress: false
+      names:
+      - client
+      - federation
+    tls: false
+    type: http
+    x_forwarded: true
+database:
+  name: psycopg2
+  args:
+    user: synapse_user
+    password: "YourSuperSecurePassword123!"
+    database: synapse
+    host: db
+    cp_min: 5
+    cp_max: 10
+log_config: "/data/192.168.0.1.log.config"
+media_store_path: /data/media_store
+registration_shared_secret: "c@klh6U.1e#Tru^C2aAd-8Ejjoi8ZP^7&#C5SR5*p57umWk+hx"
+report_stats: false
+macaroon_secret_key: "PpW*XosKvm;5VKXLqLQ+no&s76Q;h^~rg^eVkM-;Lxl*CYzI0l"
+form_secret: "-,0wqX&5r:IbVD;8SbJcntYow+485JN1A*cbJJaAZan:21XfQj"
+signing_key_path: "/data/192.168.0.1.signing.key"
+trusted_key_servers:
+  - server_name: "matrix.org"
+
+# Allow registration from client
+enable_registration: true
+enable_registration_without_verification: true
+
+
+# vim:ft=yaml

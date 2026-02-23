@@ -1,0 +1,21 @@
+# ─── Data stores (generated at runtime) ───
+postgres-data/
+synapse-data/homeserver.db
+synapse-data/media_store/
+
+# ─── Binaries ───
+livekit-server
+livekit-server.exe
+
+# ─── Generated configs ───
+livekit-dev.yaml
+
+# ─── Dependencies ───
+clientApp/node_modules/
+tokenServer/node_modules/
+
+# ─── IDE / OS ───
+.DS_Store
+Thumbs.db
+*.swp
+*~

@@ -1,0 +1,95 @@
+/* ═══════════════════════════════════════════════════
+   Modal — Reusable overlay component
+   ═══════════════════════════════════════════════════ */
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.modal {
+    width: 440px;
+    max-width: 90vw;
+    max-height: 80vh;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    animation: scaleIn var(--transition-normal) ease-out;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal__header {
+    padding: var(--sp-5) var(--sp-6);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal__title {
+    font-size: var(--font-xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--sp-1);
+}
+
+.modal__subtitle {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+}
+
+.modal__body {
+    padding: var(--sp-5) var(--sp-6);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal__footer {
+    padding: var(--sp-4) var(--sp-6);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+    background: var(--bg-dark);
+}
+
+.modal__btn {
+    height: 40px;
+    padding: 0 var(--sp-6);
+    border-radius: var(--radius-md);
+    font-size: var(--font-sm);
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.modal__btn--cancel {
+    color: var(--text-secondary);
+}
+
+.modal__btn--cancel:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
+.modal__btn--primary {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.modal__btn--primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.modal__btn--primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

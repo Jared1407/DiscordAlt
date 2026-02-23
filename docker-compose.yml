@@ -1,0 +1,62 @@
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse
+    restart: unless-stopped
+    ports:
+      # Port 8008 is unencrypted HTTP. Later, you will want to put this behind 
+      # a reverse proxy (like Nginx/Traefik) to handle TLS/SSL.
+      - "8008:8008"
+    volumes:
+      - ./synapse-data:/data
+    depends_on:
+      - db
+    networks:
+      - matrix_net
+
+  db:
+    image: postgres:14-alpine
+    container_name: synapse_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse_user
+      # In a production environment, pass this via a .env file
+      POSTGRES_PASSWORD: YourSuperSecurePassword123!
+      POSTGRES_DB: synapse
+      # Synapse strictly requires these database encoding settings
+      POSTGRES_INITDB_ARGS: --encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    networks:
+      - matrix_net
+
+  # ─── Voice/Video Infrastructure ───
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexus_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - matrix_net
+
+  token-server:
+    build: ./tokenServer
+    container_name: nexus_token_server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      LIVEKIT_API_KEY: nexus_dev_key
+      LIVEKIT_API_SECRET: nexus_dev_secret_CHANGE_ME_IN_PROD
+      SYNAPSE_URL: http://synapse:8008
+      PORT: 3001
+    depends_on:
+      - synapse
+    networks:
+      - matrix_net
+
+networks:
+  matrix_net:
+    driver: bridge

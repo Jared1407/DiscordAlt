@@ -1,0 +1,464 @@
+/* ═══════════════════════════════════════════════════
+   Voice Chat & Screen Sharing UI
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Voice Connected Bar (bottom of sidebar) ─── */
+.voice-bar {
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(62, 221, 151, 0.06);
+    flex-shrink: 0;
+    animation: slideUp var(--transition-normal) ease-out;
+}
+
+.voice-bar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.voice-bar__status {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.voice-bar__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-online);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.voice-bar__label {
+    font-size: var(--font-xs);
+    font-weight: 600;
+    color: var(--status-online);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.voice-bar__room {
+    font-size: var(--font-xs);
+    color: var(--text-secondary);
+    padding: 0 var(--sp-3) var(--sp-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.voice-bar__disconnect {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.voice-bar__disconnect:hover {
+    background: rgba(243, 90, 90, 0.15);
+    color: var(--danger);
+}
+
+.voice-bar__disconnect svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ─── Voice participants ─── */
+.voice-participants {
+    padding: var(--sp-1) var(--sp-2);
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.voice-participant {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 3px var(--sp-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-xs);
+    color: var(--text-secondary);
+}
+
+.voice-participant__avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.voice-participant__avatar--speaking {
+    box-shadow: 0 0 0 2px var(--status-online);
+    animation: pulse 1s ease-in-out infinite;
+}
+
+.voice-participant__name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.voice-participant__icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.voice-participant__icon--muted {
+    color: var(--danger);
+}
+
+/* ─── Voice Controls ─── */
+.voice-controls {
+    display: flex;
+    justify-content: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+}
+
+.voice-control-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.voice-control-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.voice-control-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.voice-control-btn--active {
+    background: var(--accent-muted);
+    color: var(--accent-primary);
+}
+
+.voice-control-btn--muted {
+    background: rgba(243, 90, 90, 0.15);
+    color: var(--danger);
+}
+
+.voice-control-btn--muted:hover {
+    background: rgba(243, 90, 90, 0.25);
+    color: var(--danger-hover);
+}
+
+.voice-control-btn--disconnect {
+    background: var(--danger);
+    color: white;
+}
+
+.voice-control-btn--disconnect:hover {
+    background: var(--danger-hover);
+    color: white;
+}
+
+/* Strikethrough indicator for muted */
+.voice-control-btn--muted::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    right: 6px;
+    height: 2px;
+    background: var(--danger);
+    transform: rotate(-45deg);
+    border-radius: 1px;
+}
+
+/* ─── Join Voice Button on room items ─── */
+.room-item__voice-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    opacity: 0;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.room-item:hover .room-item__voice-btn {
+    opacity: 1;
+}
+
+.room-item__voice-btn:hover {
+    background: rgba(62, 221, 151, 0.15);
+    color: var(--status-online);
+}
+
+.room-item__voice-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ─── Screen Share View ─── */
+.screen-share-container {
+    position: relative;
+    background: var(--bg-darkest);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: fadeIn var(--transition-normal) ease-out;
+}
+
+.screen-share-container video {
+    max-width: 100%;
+    max-height: 45vh;
+    object-fit: contain;
+    background: #000;
+}
+
+.screen-share-overlay {
+    position: absolute;
+    top: var(--sp-3);
+    left: var(--sp-3);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-3);
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: var(--radius-full);
+    font-size: var(--font-xs);
+    color: var(--text-primary);
+    backdrop-filter: blur(8px);
+}
+
+.screen-share-overlay__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.screen-share-overlay__close {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+    margin-left: var(--sp-2);
+}
+
+.screen-share-overlay__close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.screen-share-overlay__close svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ─── Voice status badge on rooms ─── */
+.room-item__voice-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--font-xs);
+    color: var(--status-online);
+    flex-shrink: 0;
+}
+
+.room-item__voice-count svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* ─── Voice Area (main content panel) ─── */
+.voice-area {
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(135deg, rgba(62, 221, 151, 0.08), rgba(138, 100, 255, 0.06));
+    border-bottom: 1px solid rgba(62, 221, 151, 0.2);
+    animation: fadeIn var(--transition-normal) ease-out;
+}
+
+.voice-area__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.voice-area__info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.voice-area__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-online);
+    animation: pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.voice-area__title {
+    font-size: var(--font-sm);
+    font-weight: 600;
+    color: var(--status-online);
+}
+
+.voice-area__count {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+}
+
+.voice-area__controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.voice-area__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: var(--font-xs);
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.voice-area__btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.voice-area__btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.voice-area__btn--active {
+    background: rgba(138, 100, 255, 0.2);
+    color: var(--accent-primary);
+}
+
+.voice-area__btn--active:hover {
+    background: rgba(138, 100, 255, 0.3);
+}
+
+.voice-area__btn--danger {
+    background: rgba(243, 90, 90, 0.15);
+    color: var(--danger);
+}
+
+.voice-area__btn--danger:hover {
+    background: rgba(243, 90, 90, 0.25);
+}
+
+.voice-area__btn--disconnect {
+    background: var(--danger);
+    color: white;
+}
+
+.voice-area__btn--disconnect:hover {
+    background: var(--danger-hover);
+}
+
+.voice-area__btn-label {
+    font-size: var(--font-xs);
+}
+
+.voice-area__participants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 16px 10px;
+}
+
+.voice-area__participant {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 4px;
+    border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.04);
+    transition: all var(--transition-fast);
+}
+
+.voice-area__participant--speaking {
+    background: rgba(62, 221, 151, 0.12);
+    box-shadow: 0 0 0 1px rgba(62, 221, 151, 0.3);
+}
+
+.voice-area__avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+}
+
+.voice-area__name {
+    font-size: var(--font-xs);
+    color: var(--text-secondary);
+}
+
+.voice-area__muted,
+.voice-area__screen-icon {
+    display: flex;
+    align-items: center;
+}
+
+.voice-area__muted svg,
+.voice-area__screen-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.voice-area__muted {
+    color: var(--danger);
+}
+
+.voice-area__screen-icon {
+    color: var(--accent-primary);
+}
