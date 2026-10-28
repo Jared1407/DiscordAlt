@@ -1,4 +1,4 @@
-https://{$NEXUS_DOMAIN:localhost} {
+https://{$NEXUS_DOMAIN:localhost}, https://{$HOST_LAN_IP:127.0.0.1}, https://localhost {
 	tls {$NEXUS_TLS_MODE:internal}
 
 	# Matrix Client-Server & Synapse APIs

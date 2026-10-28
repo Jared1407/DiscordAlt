@@ -52,5 +52,5 @@ foreach ($line in $lines) {
     }
 }
 
-$updated | Set-Content -Path $EnvFile -Encoding UTF8
+[System.IO.File]::WriteAllText($EnvFile, ($updated -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "  ✓ Environment ready ($EnvFile)" -ForegroundColor Green

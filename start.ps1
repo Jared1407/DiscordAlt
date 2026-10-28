@@ -31,6 +31,16 @@ if ($Profile -eq "lite") {
     $env:SYNAPSE_URL = "http://synapse:8008"
 }
 
+if ($Profile -in @("lite", "synapse")) {
+    $envPath = Join-Path $ScriptDir ".env"
+    $envLines = Get-Content $envPath | ForEach-Object {
+        if ($_ -match '^COMPOSE_PROFILES=') { "COMPOSE_PROFILES=$($env:COMPOSE_PROFILES)" }
+        elseif ($_ -match '^SYNAPSE_URL=') { "SYNAPSE_URL=$($env:SYNAPSE_URL)" }
+        else { $_ }
+    }
+    [System.IO.File]::WriteAllText($envPath, ($envLines -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # ─── 2. Start all containers via Docker Compose ───
 Write-Host ""
 Write-Host "[2/2] Starting Docker Compose stack..." -ForegroundColor Green
@@ -52,8 +62,8 @@ Write-Host "══════════════════════�
 Write-Host "  ✓ All Nexus services are running in Docker!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  App (HTTPS):    https://$domain" -ForegroundColor Yellow
-if ($lanIp -ne "127.0.0.1") {
-    Write-Host "  LAN IP:         $lanIp" -ForegroundColor Gray
+if ($lanIp -ne "127.0.0.1" -and $lanIp -ne $domain) {
+    Write-Host "  LAN (HTTPS):    https://$lanIp" -ForegroundColor Yellow
 }
 Write-Host "  Matrix API:     https://$domain/_matrix/client/versions" -ForegroundColor Gray
 Write-Host "  Token Health:   https://$domain/api/health" -ForegroundColor Gray
