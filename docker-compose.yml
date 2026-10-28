@@ -10,6 +10,7 @@ services:
       - "443:443/udp"
     environment:
       NEXUS_DOMAIN: ${NEXUS_DOMAIN:-localhost}
+      HOST_LAN_IP: ${HOST_LAN_IP:-127.0.0.1}
       NEXUS_TLS_MODE: ${NEXUS_TLS_MODE:-internal}
       SYNAPSE_URL: ${SYNAPSE_URL:-http://synapse:8008}
     volumes:
