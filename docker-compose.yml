@@ -192,6 +192,7 @@ services:
     environment:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-nexus_key}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-nexus_dev_secret_CHANGE_ME_IN_PROD}
+      LIVEKIT_URL: http://livekit:7880
       SYNAPSE_URL: ${SYNAPSE_URL:-http://synapse:8008}
       PORT: 3001
     networks:

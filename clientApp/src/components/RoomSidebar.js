@@ -41,18 +41,32 @@ async function fetchPublicRoomsCached(force = false) {
 }
 
 /**
- * RoomSidebar - Shows joined rooms + public room directory
+ * RoomSidebar - Shows joined rooms (filtered by active Space if selected),
+ * live voice channel participants, unread badges, and public room directory.
  */
-export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, activeRoomId }) {
-  const joinedRooms = matrixService.getRooms();
+export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, activeRoomId, activeSpaceId = null }) {
+  const allJoinedRooms = matrixService.getRooms();
+  const activeSpace = activeSpaceId
+    ? matrixService.getSpaces().find(s => s.id === activeSpaceId)
+    : null;
+  const spaceChildIds = activeSpaceId ? matrixService.getSpaceChildRoomIds(activeSpaceId) : null;
+  const joinedRooms = activeSpaceId
+    ? allJoinedRooms.filter(r => spaceChildIds.has(r.id))
+    : allJoinedRooms;
+
   const voiceRoomName = liveKitService.currentRoomName;
-  const joinedIds = new Set(joinedRooms.map(r => r.id));
+  const joinedIds = new Set(allJoinedRooms.map(r => r.id));
 
   container.innerHTML = `
     <div class="sidebar">
       <div class="sidebar__header">
-        <span class="sidebar__title">Nexus</span>
+        <span class="sidebar__title truncate">${escapeHtml(activeSpace ? activeSpace.name : 'Nexus')}</span>
         <div class="sidebar__actions">
+          ${activeSpaceId ? `
+            <button class="sidebar__btn" id="linkRoomToSpaceBtn" title="Add Existing Room to Server">
+              ${Icons.inbox}
+            </button>
+          ` : ''}
           <button class="sidebar__btn" id="browseRoomsBtn" title="Browse Public Rooms">
             ${Icons.search}
           </button>
@@ -63,32 +77,66 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
       </div>
 
       <div class="room-list" id="roomList">
-        <div class="room-list__section-title">Your Rooms - ${joinedRooms.length}</div>
+        <div class="room-list__section-title">
+          ${activeSpace ? 'Server Channels' : 'Your Rooms'} - ${joinedRooms.length}
+        </div>
         ${joinedRooms.length === 0 ? `
           <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: var(--font-sm);">
-            No rooms yet. Browse or create one!
+            ${activeSpace
+              ? 'No channels in this server yet. Create or link one!'
+              : 'No rooms yet. Browse or create one!'}
           </div>
         ` : joinedRooms.map(room => {
     const encrypted = matrixService.isRoomEncrypted(room.id);
+    const hasUnread = room.unreadCount > 0 && room.id !== activeRoomId;
+    const voiceUsers = liveKitService.getRoomVoiceParticipants(room.id);
+    const isConnectedHere = voiceRoomName === room.id;
+
     return `
-          <div class="room-item ${room.id === activeRoomId ? 'room-item--active' : ''}"
-               data-room-id="${room.id}">
-            <div class="room-item__icon" style="background: ${getAvatarColor(room.name)}20; color: ${getAvatarColor(room.name)}">
-              ${encrypted ? `<span class="room-item__lock">${Icons.lock}</span>` : getInitials(room.name)}
+          <div class="room-entry">
+            <div class="room-item ${room.id === activeRoomId ? 'room-item--active' : ''} ${hasUnread ? 'room-item--unread' : ''}"
+                 data-room-id="${room.id}">
+              <div class="room-item__icon" style="background: ${getAvatarColor(room.name)}20; color: ${getAvatarColor(room.name)}">
+                ${encrypted ? `<span class="room-item__lock">${Icons.lock}</span>` : getInitials(room.name)}
+              </div>
+              <div class="room-item__info">
+                <div class="room-item__name">${escapeHtml(room.name)}</div>
+                <div class="room-item__preview">${encrypted ? '🔒 ' : ''}${room.memberCount} member${room.memberCount !== 1 ? 's' : ''}</div>
+              </div>
+              ${hasUnread ? `<span class="badge room-item__badge">${room.unreadCount}</span>` : ''}
+              ${isConnectedHere ? `
+                <span class="room-item__voice-count" title="Connected to Voice">
+                  ${Icons.volume}
+                  <span>${voiceUsers.length || 1}</span>
+                </span>
+              ` : `
+                <button class="room-item__voice-btn ${voiceUsers.length > 0 ? 'room-item__voice-btn--occupied' : ''}"
+                        data-voice-room="${room.id}"
+                        data-voice-name="${escapeAttr(room.name)}"
+                        title="${voiceUsers.length > 0 ? `Join Voice (${voiceUsers.length} in call)` : 'Join Voice'}">
+                  ${voiceUsers.length > 0 ? `${Icons.volume}<span>${voiceUsers.length}</span>` : Icons.phone}
+                </button>
+              `}
             </div>
-            <div class="room-item__info">
-              <div class="room-item__name">${escapeHtml(room.name)}</div>
-              <div class="room-item__preview">${encrypted ? '🔒 ' : ''}${room.memberCount} member${room.memberCount !== 1 ? 's' : ''}</div>
-            </div>
-            ${voiceRoomName === room.id ? `
-              <span class="room-item__voice-count">${Icons.phone}</span>
-            ` : `
-              <button class="room-item__voice-btn" data-voice-room="${room.id}" data-voice-name="${escapeAttr(room.name)}" title="Join Voice">
-                ${Icons.phone}
-              </button>
-            `}
+            ${voiceUsers.length > 0 ? `
+              <div class="room-voice-tree">
+                ${voiceUsers.map(u => `
+                  <div class="room-voice-user"
+                       data-voice-room="${room.id}"
+                       data-voice-name="${escapeAttr(room.name)}"
+                       title="Click to join voice channel">
+                    <div class="room-voice-user__avatar" style="background: ${getAvatarColor(u.identity)}">
+                      ${getInitials(u.name)}
+                    </div>
+                    <span class="room-voice-user__name">${escapeHtml(formatName(u.name))}</span>
+                    ${u.isScreenSharing ? `<span class="room-voice-user__live">${Icons.monitor} LIVE</span>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
-        `}).join('')}
+        `;
+  }).join('')}
 
         <div id="publicRoomsSection"></div>
       </div>
@@ -120,25 +168,65 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
   loadPublicRooms(container.querySelector('#publicRoomsSection'), joinedIds, onRoomSelect);
 
   // Room click
-  container.querySelectorAll('.room-item').forEach(item => {
+  container.querySelectorAll('.room-item[data-room-id]').forEach(item => {
     item.addEventListener('click', (e) => {
       if (e.target.closest('.room-item__voice-btn')) return;
       onRoomSelect(item.dataset.roomId);
     });
   });
 
-  // Voice join
-  container.querySelectorAll('.room-item__voice-btn').forEach(btn => {
+  // Voice join (button or clicking a voice participant row)
+  container.querySelectorAll('[data-voice-room]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (onJoinVoice) onJoinVoice(btn.dataset.voiceRoom, btn.dataset.voiceName);
+      const targetRoomId = btn.dataset.voiceRoom;
+      const targetRoomName = btn.dataset.voiceName;
+      if (liveKitService.connected && liveKitService.currentRoomName === targetRoomId) {
+        onRoomSelect(targetRoomId);
+        return;
+      }
+      if (onJoinVoice) onJoinVoice(targetRoomId, targetRoomName);
+    });
+  });
+
+  // Link existing room to active Space
+  container.querySelector('#linkRoomToSpaceBtn')?.addEventListener('click', () => {
+    const unlinked = allJoinedRooms.filter(r => !spaceChildIds.has(r.id));
+    if (unlinked.length === 0) {
+      alert('All of your joined rooms are already in this server!');
+      return;
+    }
+
+    showModal(document.getElementById('app'), {
+      title: `Add Room to ${activeSpace?.name || 'Server'}`,
+      subtitle: 'Choose an existing room to include in this server.',
+      bodyHtml: `
+        <div class="form-group">
+          <label class="form-group__label">Select Room</label>
+          <select class="form-group__input" id="linkRoomSelect" style="background: var(--bg-tertiary); color: var(--text-primary);">
+            ${unlinked.map(r => `<option value="${escapeAttr(r.id)}"># ${escapeHtml(r.name)}</option>`).join('')}
+          </select>
+        </div>
+      `,
+      submitLabel: 'Add to Server',
+      onSubmit: async (backdrop) => {
+        const selectedId = backdrop.querySelector('#linkRoomSelect')?.value;
+        if (!selectedId) return;
+        try {
+          await matrixService.addRoomToSpace(activeSpaceId, selectedId);
+          onRoomSelect(selectedId);
+        } catch (err) {
+          console.error('Failed to add room to server:', err);
+          alert('Failed to add room to server: ' + (err.message || err));
+        }
+      },
     });
   });
 
   // Create room
   container.querySelector('#createRoomBtn').addEventListener('click', () => {
     showModal(document.getElementById('app'), {
-      title: 'Create a Room',
+      title: activeSpace ? `Create Channel in ${activeSpace.name}` : 'Create a Room',
       subtitle: 'New rooms are end-to-end encrypted. All members can see and join.',
       bodyHtml: `
         <div class="form-group" style="margin-bottom: 16px;">
@@ -157,7 +245,13 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
         if (!name) return;
         try {
           invalidatePublicRoomsCache();
-          await matrixService.createRoom(name, topic);
+          const newRoomId = await matrixService.createRoom(name, topic);
+          if (activeSpaceId && newRoomId) {
+            await matrixService.addRoomToSpace(activeSpaceId, newRoomId);
+          }
+          if (newRoomId) {
+            onRoomSelect(newRoomId);
+          }
         } catch (err) {
           console.error('Failed to create room:', err);
           alert('Failed to create room: ' + (err.message || err));

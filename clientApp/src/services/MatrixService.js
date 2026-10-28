@@ -7,13 +7,14 @@ const DECRYPTING_BODY = '🔒 Decrypting…';
 
 /**
  * MatrixService — Wrapper around the Matrix JS SDK
- * Handles auth, sync, rooms, messaging, and E2E encryption.
+ * Handles auth, sync, rooms, Spaces, rich media messaging, scrollback, and E2E encryption.
  */
 class MatrixService {
     constructor() {
         this.client = null;
         this.homeserverUrl = config.matrixUrl;
         this._listeners = {};
+        this._mediaBlobCache = new Map();
     }
 
     // ─── Event Emitter ───
@@ -148,7 +149,15 @@ class MatrixService {
         }
     }
 
+    _clearMediaCache() {
+        for (const url of this._mediaBlobCache.values()) {
+            try { URL.revokeObjectURL(url); } catch { }
+        }
+        this._mediaBlobCache.clear();
+    }
+
     async logout() {
+        this._clearMediaCache();
         if (this.client) {
             try { this.client.stopClient(); } catch { }
             try { await this.client.logout(); } catch { }
@@ -232,6 +241,7 @@ class MatrixService {
      * Stop the client and forget the saved session locally (no server call).
      */
     _discardSession() {
+        this._clearMediaCache();
         this._stopClient();
         this.client = null;
         localStorage.removeItem('mx_session');
@@ -268,6 +278,9 @@ class MatrixService {
             sender: event.getSender(),
             body,
             msgtype: content.msgtype || 'm.text',
+            mxcUrl: content.url || content.file?.url || null,
+            info: content.info || null,
+            filename: content.filename || content.body || 'attachment',
             timestamp: event.getDate(),
             encrypted: event.isEncrypted(),
             pending,
@@ -275,24 +288,33 @@ class MatrixService {
     }
 
     _setupListeners() {
-        // Live timeline events (handles both plaintext and decrypted messages)
+        // Live timeline events (emit immediately in timeline order; update in-place on decrypt)
         this.client.on("Room.timeline", (event, room, toStartOfTimeline) => {
             if (toStartOfTimeline) return;
             if (!this._isMessageLike(event)) return;
 
-            // Decryption is async — wait for it instead of emitting a placeholder.
+            this._emit('message', this._toMessage(event, room.roomId));
+
             if (this._isPendingDecryption(event)) {
                 event.once(MatrixEventEvent.Decrypted, () => {
-                    this._emit('message', this._toMessage(event, room.roomId));
+                    this._emit('messageUpdated', this._toMessage(event, room.roomId));
                 });
-                return;
             }
-
-            this._emit('message', this._toMessage(event, room.roomId));
         });
 
-        // Room list changes
+        // Room list & space hierarchy changes
         this.client.on("Room", () => {
+            this._emit('roomsChanged', this.getRooms());
+        });
+
+        this.client.on("RoomState.events", (event) => {
+            const type = event.getType?.();
+            if (type === 'm.space.child' || type === 'm.room.name' || type === 'm.room.topic') {
+                this._emit('roomsChanged', this.getRooms());
+            }
+        });
+
+        this.client.on("Room.receipt", () => {
             this._emit('roomsChanged', this.getRooms());
         });
 
@@ -310,19 +332,71 @@ class MatrixService {
         });
     }
 
+    // ─── Spaces (Discord-style Servers) ───
+    _isSpace(room) {
+        if (room.isSpaceRoom?.()) return true;
+        const createEvent = room.currentState?.getStateEvents('m.room.create', '');
+        return createEvent?.getContent()?.type === 'm.space';
+    }
+
+    getSpaces() {
+        if (!this.client) return [];
+        return this.client.getRooms()
+            .filter(room => room.getMyMembership() === 'join' && this._isSpace(room))
+            .map(room => ({
+                id: room.roomId,
+                name: room.name || 'Unnamed Space',
+                topic: room.currentState?.getStateEvents('m.room.topic', '')?.getContent()?.topic || '',
+            }));
+    }
+
+    getSpaceChildRoomIds(spaceId) {
+        if (!this.client || !spaceId) return new Set();
+        const space = this.client.getRoom(spaceId);
+        if (!space) return new Set();
+        const events = space.currentState?.getStateEvents('m.space.child') || [];
+        const list = Array.isArray(events) ? events : [events];
+        const childIds = new Set();
+        for (const ev of list) {
+            const via = ev?.getContent?.()?.via;
+            const stateKey = ev?.getStateKey?.();
+            if (stateKey && Array.isArray(via) && via.length > 0) {
+                childIds.add(stateKey);
+            }
+        }
+        return childIds;
+    }
+
+    async createSpace(name, topic = '') {
+        if (!this.client) throw new Error("Not logged in");
+        const result = await this.client.createRoom({
+            name,
+            topic: topic || undefined,
+            visibility: 'public',
+            preset: 'public_chat',
+            creation_content: { type: 'm.space' },
+        });
+        return result.room_id;
+    }
+
+    async addRoomToSpace(spaceId, roomId) {
+        if (!this.client) throw new Error("Not logged in");
+        const serverName = (this.userId || '').split(':')[1] || 'nexus.local';
+        await this.client.sendStateEvent(spaceId, 'm.space.child', { via: [serverName] }, roomId);
+        this._emit('roomsChanged', this.getRooms());
+    }
+
     // ─── Rooms ───
     getRooms() {
         if (!this.client) return [];
         return this.client.getRooms()
-            .filter(room => {
-                const membership = room.getMyMembership();
-                return membership === 'join';
-            })
+            .filter(room => room.getMyMembership() === 'join' && !this._isSpace(room))
             .map(room => ({
                 id: room.roomId,
                 name: room.name || 'Unnamed Room',
                 topic: room.currentState?.getStateEvents('m.room.topic', '')?.getContent()?.topic || '',
                 memberCount: room.getJoinedMemberCount(),
+                unreadCount: room.getUnreadNotificationCount?.('total') || 0,
                 lastEvent: room.timeline?.[room.timeline.length - 1],
             }))
             .sort((a, b) => {
@@ -368,10 +442,108 @@ class MatrixService {
             });
     }
 
-    // ─── Messaging ───
+    /**
+     * Paginate older history for a room.
+     */
+    async loadMoreMessages(roomId, limit = 30) {
+        const room = this.client?.getRoom(roomId);
+        if (!room) return { messages: [], canLoadMore: false };
+
+        try {
+            await this.client.scrollback(room, limit);
+        } catch (err) {
+            console.warn('Scrollback error:', err);
+        }
+
+        return {
+            messages: this.getRoomMessages(roomId, 200),
+            canLoadMore: Boolean(room.oldState?.paginationToken),
+        };
+    }
+
+    /**
+     * Send a read receipt for the latest timeline event in a room.
+     */
+    async markRoomRead(roomId) {
+        const room = this.client?.getRoom(roomId);
+        if (!room || !room.timeline?.length) return;
+
+        for (let i = room.timeline.length - 1; i >= 0; i--) {
+            const ev = room.timeline[i];
+            const id = ev?.getId?.();
+            if (id && !id.startsWith('~')) {
+                try {
+                    await this.client.sendReadReceipt(ev);
+                } catch {
+                    // Ignore receipt errors
+                }
+                break;
+            }
+        }
+    }
+
+    // ─── Messaging & Media ───
     async sendMessage(roomId, body) {
         if (!this.client) throw new Error("Not logged in");
         await this.client.sendTextMessage(roomId, body);
+    }
+
+    async sendFileMessage(roomId, file) {
+        if (!this.client) throw new Error("Not logged in");
+        const uploadRes = await this.client.uploadContent(file);
+        const contentUri = typeof uploadRes === 'string' ? uploadRes : uploadRes.content_uri;
+        const mime = file.type || 'application/octet-stream';
+
+        let msgtype = 'm.file';
+        if (mime.startsWith('image/')) msgtype = 'm.image';
+        else if (mime.startsWith('video/')) msgtype = 'm.video';
+        else if (mime.startsWith('audio/')) msgtype = 'm.audio';
+
+        await this.client.sendMessage(roomId, {
+            msgtype,
+            body: file.name,
+            filename: file.name,
+            url: contentUri,
+            info: {
+                mimetype: mime,
+                size: file.size,
+            },
+        });
+    }
+
+    async fetchMediaObjectUrl(mxcUrl) {
+        if (!mxcUrl || !mxcUrl.startsWith('mxc://') || !this.client) return null;
+        if (this._mediaBlobCache.has(mxcUrl)) {
+            return this._mediaBlobCache.get(mxcUrl);
+        }
+
+        const withoutScheme = mxcUrl.slice('mxc://'.length);
+        const slashIdx = withoutScheme.indexOf('/');
+        if (slashIdx === -1) return null;
+        const server = withoutScheme.slice(0, slashIdx);
+        const mediaId = withoutScheme.slice(slashIdx + 1);
+
+        const token = this.client.getAccessToken?.();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const urls = [
+            `${this.homeserverUrl}/_matrix/client/v1/media/download/${encodeURIComponent(server)}/${encodeURIComponent(mediaId)}`,
+            `${this.homeserverUrl}/_matrix/media/v3/download/${encodeURIComponent(server)}/${encodeURIComponent(mediaId)}`,
+        ];
+
+        for (const url of urls) {
+            try {
+                const res = await fetch(url, { headers });
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+                    this._mediaBlobCache.set(mxcUrl, objectUrl);
+                    return objectUrl;
+                }
+            } catch {
+                // try fallback endpoint
+            }
+        }
+        return null;
     }
 
     // ─── Room Management ───
@@ -421,14 +593,16 @@ class MatrixService {
                 limit: 100,
             });
             const joinedIds = new Set(this.getRooms().map(r => r.id));
-            return (response.chunk || []).map(room => ({
-                id: room.room_id,
-                name: room.name || 'Unnamed Room',
-                topic: room.topic || '',
-                memberCount: room.num_joined_members || 0,
-                alias: room.canonical_alias || '',
-                joined: joinedIds.has(room.room_id),
-            }));
+            return (response.chunk || [])
+                .filter(room => room.room_type !== 'm.space')
+                .map(room => ({
+                    id: room.room_id,
+                    name: room.name || 'Unnamed Room',
+                    topic: room.topic || '',
+                    memberCount: room.num_joined_members || 0,
+                    alias: room.canonical_alias || '',
+                    joined: joinedIds.has(room.room_id),
+                }));
         } catch (err) {
             console.error('Failed to fetch public rooms:', err);
             return [];

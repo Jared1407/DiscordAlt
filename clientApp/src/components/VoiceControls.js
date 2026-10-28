@@ -1,4 +1,5 @@
 import { liveKitService } from '../services/LiveKitService.js';
+import { matrixService } from '../services/MatrixService.js';
 import { getAvatarColor, getInitials } from '../utils/avatars.js';
 import { Icons } from '../utils/icons.js';
 import { escapeHtml, formatName } from '../utils/format.js';
@@ -14,9 +15,11 @@ export function renderVoiceControls(container) {
   }
 
   const participants = liveKitService.getParticipants();
-  const roomName = liveKitService.currentRoomName || 'Voice Channel';
-  // Clean up room name (Matrix room IDs are ugly)
-  const displayName = roomName.startsWith('!') ? 'Voice Channel' : roomName;
+  const rawName = liveKitService.currentRoomDisplayName || liveKitService.currentRoomName || '';
+  const resolvedRoom = matrixService.getRooms().find(r => r.id === liveKitService.currentRoomName);
+  const displayName = (!rawName || rawName.startsWith('!'))
+    ? (resolvedRoom?.name || 'Voice Channel')
+    : rawName;
 
   container.innerHTML = `
     <div class="voice-bar">
@@ -79,4 +82,3 @@ export function renderVoiceControls(container) {
     }
   });
 }
-

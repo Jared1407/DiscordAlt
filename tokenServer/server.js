@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 
 const app = express();
 app.use(cors());
@@ -9,8 +9,11 @@ app.use(express.json());
 // ─── Configuration (from environment or defaults) ───
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'nexus_dev_key';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'nexus_dev_secret_CHANGE_ME_IN_PROD';
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'http://localhost:7880';
 const SYNAPSE_URL = process.env.SYNAPSE_URL || 'http://localhost:8008';
 const PORT = process.env.PORT || 3001;
+
+const roomService = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
 /**
  * Verify a Matrix access token against Synapse.
@@ -68,8 +71,8 @@ app.post('/token', async (req, res) => {
     }
 
     const { roomName } = req.body || {};
-    if (typeof roomName !== 'string' || !roomName.startsWith('!')) {
-        return res.status(400).json({ error: 'roomName must be a Matrix room ID' });
+    if (typeof roomName !== 'string' || !/^\![a-zA-Z0-9._=-]+:[a-zA-Z0-9.:-]+$/.test(roomName)) {
+        return res.status(400).json({ error: 'roomName must be a valid Matrix room ID' });
     }
 
     // Verify caller is joined to the Matrix room and get their display name
@@ -102,6 +105,45 @@ app.post('/token', async (req, res) => {
 });
 
 /**
+ * GET /voice-status
+ * Headers: Authorization: Bearer <matrix_access_token>
+ * Returns: { rooms: { [roomId]: Array<{ identity, name, isScreenSharing }> } }
+ */
+app.get('/voice-status', async (req, res) => {
+    const matrixUserId = await verifyMatrixToken(req.headers.authorization);
+    if (!matrixUserId) {
+        return res.status(401).json({ error: 'Valid Matrix authentication required' });
+    }
+
+    try {
+        const activeRooms = await roomService.listRooms();
+        const rooms = {};
+
+        await Promise.all(
+            activeRooms
+                .filter(room => room.numParticipants > 0)
+                .map(async (room) => {
+                    try {
+                        const participants = await roomService.listParticipants(room.name);
+                        rooms[room.name] = participants.map(p => ({
+                            identity: p.identity,
+                            name: p.name || p.identity,
+                            isScreenSharing: (p.tracks || []).some(t => t.source === 3 && !t.muted),
+                        }));
+                    } catch {
+                        // Room may have closed mid-query
+                    }
+                })
+        );
+
+        res.json({ rooms });
+    } catch (err) {
+        console.error('Voice status query error:', err.message);
+        res.json({ rooms: {} });
+    }
+});
+
+/**
  * GET /health
  * Health check endpoint
  */
@@ -112,4 +154,5 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Nexus Token Server running on port ${PORT}`);
     console.log(`Synapse URL: ${SYNAPSE_URL}`);
+    console.log(`LiveKit URL: ${LIVEKIT_URL}`);
 });

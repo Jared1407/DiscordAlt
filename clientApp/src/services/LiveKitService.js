@@ -15,12 +15,17 @@ class LiveKitService {
         /** @type {Room|null} */
         this.room = null;
         this.currentRoomName = null;
+        this.currentRoomDisplayName = null;
         this.connected = false;
         this.muted = false;
         this.deafened = false;
         this.screenSharing = false;
         this._screenTrack = null;
         this._listeners = {};
+
+        /** @type {Record<string, Array<{identity: string, name: string, isScreenSharing: boolean}>>} */
+        this.roomParticipantsMap = {};
+        this._statusPollInterval = null;
 
         this.livekitUrl = config.livekitUrl;
         this.tokenServerUrl = config.tokenServerUrl;
@@ -41,21 +46,70 @@ class LiveKitService {
         (this._listeners[event] || []).forEach(cb => cb(...args));
     }
 
+    _getAuthHeader() {
+        const session = localStorage.getItem('mx_session');
+        if (session) {
+            try {
+                const { accessToken } = JSON.parse(session);
+                if (accessToken) return `Bearer ${accessToken}`;
+            } catch { /* ignore parse errors */ }
+        }
+        return null;
+    }
+
+    // ─── Pre-Join Voice Presence Polling ───
+    async fetchVoiceStatus() {
+        const auth = this._getAuthHeader();
+        if (!auth) return;
+
+        try {
+            const res = await fetch(`${this.tokenServerUrl}/voice-status`, {
+                headers: { Authorization: auth },
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const nextMap = data.rooms || {};
+            const prevJson = JSON.stringify(this.roomParticipantsMap);
+            const nextJson = JSON.stringify(nextMap);
+            this.roomParticipantsMap = nextMap;
+            if (prevJson !== nextJson) {
+                this._emit('voiceStatusChanged', this.roomParticipantsMap);
+            }
+        } catch {
+            // Silently ignore network errors during background polling
+        }
+    }
+
+    startVoiceStatusPolling(intervalMs = 5000) {
+        this.stopVoiceStatusPolling();
+        this.fetchVoiceStatus();
+        this._statusPollInterval = setInterval(() => {
+            this.fetchVoiceStatus();
+        }, intervalMs);
+    }
+
+    stopVoiceStatusPolling() {
+        if (this._statusPollInterval) {
+            clearInterval(this._statusPollInterval);
+            this._statusPollInterval = null;
+        }
+    }
+
+    getRoomVoiceParticipants(roomId) {
+        if (this.connected && this.currentRoomName === roomId) {
+            return this.getParticipants();
+        }
+        return this.roomParticipantsMap[roomId] || [];
+    }
+
     /**
      * Request a LiveKit access token from the token server.
      * Sends the Matrix access token for authentication.
      */
     async _getToken(roomName) {
         const headers = { 'Content-Type': 'application/json' };
-
-        // Attach Matrix auth token if available
-        const session = localStorage.getItem('mx_session');
-        if (session) {
-            try {
-                const { accessToken } = JSON.parse(session);
-                if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-            } catch { /* ignore parse errors */ }
-        }
+        const auth = this._getAuthHeader();
+        if (auth) headers['Authorization'] = auth;
 
         const res = await fetch(`${this.tokenServerUrl}/token`, {
             method: 'POST',
@@ -77,7 +131,7 @@ class LiveKitService {
     }
 
     // ─── Connect / Disconnect ───
-    async joinVoice(roomName) {
+    async joinVoice(roomName, displayName = null) {
         if (this.connected) {
             await this.leaveVoice();
         }
@@ -110,6 +164,7 @@ class LiveKitService {
                 });
 
                 this.currentRoomName = roomName;
+                this.currentRoomDisplayName = displayName || roomName;
                 this.connected = true;
                 this.muted = false;
                 this.deafened = false;
@@ -119,8 +174,11 @@ class LiveKitService {
 
                 this._emit('connected', {
                     roomName,
+                    displayName: this.currentRoomDisplayName,
                     participants: this.getParticipants(),
                 });
+
+                this.fetchVoiceStatus();
 
                 return true;
             } catch (err) {
@@ -156,12 +214,14 @@ class LiveKitService {
         }
 
         this.currentRoomName = null;
+        this.currentRoomDisplayName = null;
         this.connected = false;
         this.muted = false;
         this.deafened = false;
         this.screenSharing = false;
 
         this._emit('disconnected');
+        this.fetchVoiceStatus();
     }
 
     // ─── Mic Controls ───
@@ -211,6 +271,7 @@ class LiveKitService {
 
             this.screenSharing = true;
             this._emit('screenShareChanged', true);
+            this.fetchVoiceStatus();
             return true;
         } catch (err) {
             // User cancelled the screen share picker
@@ -235,6 +296,7 @@ class LiveKitService {
         this._screenTrack = null;
         this.screenSharing = false;
         this._emit('screenShareChanged', false);
+        this.fetchVoiceStatus();
     }
 
     // ─── Participants ───
@@ -301,11 +363,13 @@ class LiveKitService {
         this.room.on(RoomEvent.ParticipantConnected, (participant) => {
             this._emit('participantJoined', participant.identity);
             this._emit('participantsChanged', this.getParticipants());
+            this.fetchVoiceStatus();
         });
 
         this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
             this._emit('participantLeft', participant.identity);
             this._emit('participantsChanged', this.getParticipants());
+            this.fetchVoiceStatus();
         });
 
         this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
@@ -330,6 +394,7 @@ class LiveKitService {
             }
 
             this._emit('participantsChanged', this.getParticipants());
+            this.fetchVoiceStatus();
         });
 
         this.room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
@@ -345,6 +410,7 @@ class LiveKitService {
             }
 
             this._emit('participantsChanged', this.getParticipants());
+            this.fetchVoiceStatus();
         });
 
         this.room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -355,13 +421,17 @@ class LiveKitService {
         this.room.on(RoomEvent.Disconnected, () => {
             this.connected = false;
             this.currentRoomName = null;
+            this.currentRoomDisplayName = null;
             this._emit('disconnected');
+            this.fetchVoiceStatus();
         });
 
         this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
             if (state === ConnectionState.Disconnected) {
                 this.connected = false;
+                this.currentRoomDisplayName = null;
                 this._emit('disconnected');
+                this.fetchVoiceStatus();
             }
         });
     }
