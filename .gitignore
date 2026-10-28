@@ -1,13 +1,21 @@
+# ─── Environment & Secrets ───
+.env
+
 # ─── Data stores (generated at runtime) ───
 postgres-data/
-synapse-data/homeserver.db
-synapse-data/media_store/
+synapse-data/*
+!synapse-data/.gitkeep
+conduwuit-data/
+caddy-data/
+caddy-config/
 
-# ─── Binaries ───
+# ─── Build output ───
+clientApp/dist/
+clientApp/.vite-temp/
+
+# ─── Binaries & generated configs ───
 livekit-server
 livekit-server.exe
-
-# ─── Generated configs ───
 livekit-dev.yaml
 
 # ─── Dependencies ───

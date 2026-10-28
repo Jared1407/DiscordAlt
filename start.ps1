@@ -1,16 +1,17 @@
-# ═══════════════════════════════════════════════════
-#  Nexus — Full Stack Launch Script (Windows)
-#  Starts: Synapse + PostgreSQL + Redis + Token Server
-#          + LiveKit (native) + Vite Client
-# ═══════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+#  Nexus — Cross-Platform Full-Stack Launcher (PowerShell)
+#  Starts: Caddy (HTTPS) + Client + Synapse/Conduwuit + DB + Redis
+#          + LiveKit SFU + Token Server via Docker Compose
+# ═══════════════════════════════════════════════════════════════════
+
+param(
+    [ValidateSet("synapse", "lite")]
+    [string]$Profile = ""
+)
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
-
-$LiveKitVersion = "1.9.11"
-$LiveKitBin = Join-Path $ScriptDir "livekit-server.exe"
-$LiveKitConfig = Join-Path $ScriptDir "livekit-dev.yaml"
 
 Write-Host ""
 Write-Host "  ╔═══════════════════════════════════╗" -ForegroundColor Cyan
@@ -18,111 +19,46 @@ Write-Host "  ║         NEXUS — Full Start        ║" -ForegroundColor Cyan
 Write-Host "  ╚═══════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
-# ─── 1. Docker services (Synapse, DB, Redis, Token Server) ───
-Write-Host "[1/4] Starting Docker services..." -ForegroundColor Green
-docker compose up -d --build synapse db redis token-server
+# ─── 1. Initialize .env and secrets if needed ───
+Write-Host "[1/2] Validating environment configuration..." -ForegroundColor Green
+& (Join-Path $ScriptDir "scripts\init-env.ps1")
+
+if ($Profile -eq "lite") {
+    $env:COMPOSE_PROFILES = "lite"
+    $env:SYNAPSE_URL = "http://conduwuit:8008"
+} elseif ($Profile -eq "synapse") {
+    $env:COMPOSE_PROFILES = "synapse"
+    $env:SYNAPSE_URL = "http://synapse:8008"
+}
+
+# ─── 2. Start all containers via Docker Compose ───
+Write-Host ""
+Write-Host "[2/2] Starting Docker Compose stack..." -ForegroundColor Green
+docker compose up -d --build
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ✗ Docker failed to start! Is Docker Desktop running?" -ForegroundColor Red
-    exit 1
-}
-Write-Host "  ✓ Synapse (Matrix)    → http://localhost:8008" -ForegroundColor Gray
-Write-Host "  ✓ Redis               → localhost:6379" -ForegroundColor Gray
-Write-Host "  ✓ Token Server        → http://localhost:3001" -ForegroundColor Gray
-
-# ─── 2. Download LiveKit binary if needed ───
-if (-not (Test-Path $LiveKitBin)) {
-    Write-Host ""
-    Write-Host "[2/4] Downloading LiveKit v${LiveKitVersion}..." -ForegroundColor Green
-    $url = "https://github.com/livekit/livekit/releases/download/v${LiveKitVersion}/livekit_${LiveKitVersion}_windows_amd64.zip"
-    $zipPath = Join-Path $ScriptDir "livekit.zip"
-    Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
-    Expand-Archive -Path $zipPath -DestinationPath $ScriptDir -Force
-    Remove-Item $zipPath -Force
-    Write-Host "  ✓ LiveKit binary downloaded" -ForegroundColor Gray
-} else {
-    Write-Host ""
-    Write-Host "[2/4] LiveKit binary found ✓" -ForegroundColor Green
-}
-
-# ─── 3. Generate LiveKit config & start natively ───
-Write-Host ""
-Write-Host "[3/4] Starting LiveKit server..." -ForegroundColor Green
-
-# Write dev config
-@"
-port: 7880
-rtc:
-  tcp_port: 7881
-  udp_port: 7882
-  use_ice_lite: true
-redis:
-  address: localhost:6379
-keys:
-  nexus_dev_key: nexus_dev_secret_CHANGE_ME_IN_PROD
-logging:
-  level: info
-"@ | Set-Content -Path $LiveKitConfig -Encoding UTF8
-
-# Kill any existing LiveKit
-Get-Process -Name "livekit-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 1
-
-# Start LiveKit in background
-$livekitProcess = Start-Process -FilePath $LiveKitBin `
-    -ArgumentList "--config", $LiveKitConfig, "--dev" `
-    -PassThru -WindowStyle Hidden
-
-Start-Sleep -Seconds 2
-
-if (-not $livekitProcess.HasExited) {
-    Write-Host "  ✓ LiveKit SFU         → ws://localhost:7880 (PID: $($livekitProcess.Id))" -ForegroundColor Gray
-} else {
-    Write-Host "  ✗ LiveKit failed to start!" -ForegroundColor Red
+    Write-Host "  ✗ Docker Compose failed to start! Is Docker Desktop running?" -ForegroundColor Red
     exit 1
 }
 
-# ─── 4. Start Vite dev server ───
-Write-Host ""
-Write-Host "[4/4] Starting Nexus client..." -ForegroundColor Green
-
-Set-Location (Join-Path $ScriptDir "clientApp")
-
-# Install deps if needed
-if (-not (Test-Path "node_modules")) {
-    Write-Host "  Installing npm dependencies..."
-    npm install
+$domain = "localhost"
+$lanIp = "127.0.0.1"
+foreach ($line in (Get-Content (Join-Path $ScriptDir ".env"))) {
+    if ($line -match '^NEXUS_DOMAIN=(.+)$') { $domain = $Matches[1].Trim() }
+    if ($line -match '^HOST_LAN_IP=(.+)$') { $lanIp = $Matches[1].Trim() }
 }
 
 Write-Host ""
-Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "  ✓ All services running!" -ForegroundColor Green
+Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "  ✓ All Nexus services are running in Docker!" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Open:  http://localhost:5173" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "  Matrix Server:  http://localhost:8008" -ForegroundColor Gray
-Write-Host "  Token Server:   http://localhost:3001" -ForegroundColor Gray
-Write-Host "  LiveKit SFU:    ws://localhost:7880" -ForegroundColor Gray
-Write-Host ""
-Write-Host "  Press Ctrl+C to stop all services" -ForegroundColor Gray
-Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
-Write-Host ""
-
-# Cleanup handler
-$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-    Write-Host "`nShutting down..." -ForegroundColor Yellow
-    Get-Process -Name "livekit-server" -ErrorAction SilentlyContinue | Stop-Process -Force
-    docker compose stop 2>$null
-    Write-Host "All services stopped." -ForegroundColor Green
+Write-Host "  App (HTTPS):    https://$domain" -ForegroundColor Yellow
+if ($lanIp -ne "127.0.0.1") {
+    Write-Host "  LAN IP:         $lanIp" -ForegroundColor Gray
 }
-
-try {
-    # Run Vite in foreground
-    npx vite --host
-} finally {
-    # Cleanup when Vite exits or Ctrl+C
-    Write-Host "`nShutting down..." -ForegroundColor Yellow
-    Get-Process -Name "livekit-server" -ErrorAction SilentlyContinue | Stop-Process -Force
-    Set-Location $ScriptDir
-    docker compose stop 2>$null
-    Write-Host "All services stopped." -ForegroundColor Green
-}
+Write-Host "  Matrix API:     https://$domain/_matrix/client/versions" -ForegroundColor Gray
+Write-Host "  Token Health:   https://$domain/api/health" -ForegroundColor Gray
+Write-Host "  LiveKit WS:     wss://$domain/livekit" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Stop stack:     docker compose down" -ForegroundColor Gray
+Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host ""
