@@ -1,43 +1,184 @@
 services:
-  synapse:
-    image: matrixdotorg/synapse:latest
-    container_name: synapse
+  # ─── Reverse Proxy (Single Local-HTTPS Origin) ───
+  caddy:
+    image: caddy:2-alpine
+    container_name: nexus_caddy
     restart: unless-stopped
     ports:
-      # Port 8008 is unencrypted HTTP. Later, you will want to put this behind 
-      # a reverse proxy (like Nginx/Traefik) to handle TLS/SSL.
-      - "8008:8008"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      NEXUS_DOMAIN: ${NEXUS_DOMAIN:-localhost}
+      NEXUS_TLS_MODE: ${NEXUS_TLS_MODE:-internal}
+      SYNAPSE_URL: ${SYNAPSE_URL:-http://synapse:8008}
     volumes:
-      - ./synapse-data:/data
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config
     depends_on:
-      - db
+      - client
+      - token-server
+      - livekit
     networks:
       - matrix_net
 
+  # ─── Containerized Client App (Vite SPA + Nginx) ───
+  client:
+    build:
+      context: ./clientApp
+      dockerfile: Dockerfile
+    container_name: nexus_client
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - matrix_net
+
+  # ─── Matrix Homeserver: Standard Profile (Synapse + PostgreSQL) ───
   db:
     image: postgres:14-alpine
     container_name: synapse_db
     restart: unless-stopped
+    profiles:
+      - synapse
     environment:
-      POSTGRES_USER: synapse_user
-      # In a production environment, pass this via a .env file
-      POSTGRES_PASSWORD: YourSuperSecurePassword123!
-      POSTGRES_DB: synapse
-      # Synapse strictly requires these database encoding settings
+      POSTGRES_USER: ${POSTGRES_USER:-synapse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_dev_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
       POSTGRES_INITDB_ARGS: --encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse_user} -d ${POSTGRES_DB:-synapse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - matrix_net
+
+  synapse-init:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse_init
+    profiles:
+      - synapse
+    environment:
+      SYNAPSE_SERVER_NAME: ${MATRIX_SERVER_NAME:-nexus.local}
+      SYNAPSE_REPORT_STATS: "no"
+      POSTGRES_USER: ${POSTGRES_USER:-synapse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_dev_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      REGISTRATION_SHARED_SECRET: ${REGISTRATION_SHARED_SECRET:-}
+      MACAROON_SECRET_KEY: ${MACAROON_SECRET_KEY:-}
+      FORM_SECRET: ${FORM_SECRET:-}
+    volumes:
+      - ./synapse-data:/data
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        if [ ! -f /data/homeserver.yaml ]; then
+          echo "Generating initial Synapse configuration for $${SYNAPSE_SERVER_NAME}..."
+          /start.py generate
+        fi
+        python3 - <<'PY'
+        import os, yaml
+        path = "/data/homeserver.yaml"
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        cfg["server_name"] = os.environ.get("SYNAPSE_SERVER_NAME", cfg.get("server_name", "nexus.local"))
+        cfg["database"] = {
+            "name": "psycopg2",
+            "args": {
+                "user": os.environ["POSTGRES_USER"],
+                "password": os.environ["POSTGRES_PASSWORD"],
+                "database": os.environ["POSTGRES_DB"],
+                "host": "db",
+                "cp_min": 5,
+                "cp_max": 10,
+            },
+        }
+        cfg["enable_registration"] = True
+        cfg["enable_registration_without_verification"] = True
+        cfg["report_stats"] = False
+        for env_key, yaml_key in [
+            ("REGISTRATION_SHARED_SECRET", "registration_shared_secret"),
+            ("MACAROON_SECRET_KEY", "macaroon_secret_key"),
+            ("FORM_SECRET", "form_secret"),
+        ]:
+            val = os.environ.get(env_key)
+            if val:
+                cfg[yaml_key] = val
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+        print("Synapse homeserver.yaml configured successfully.")
+        PY
+    networks:
+      - matrix_net
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse
+    restart: unless-stopped
+    profiles:
+      - synapse
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./synapse-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      synapse-init:
+        condition: service_completed_successfully
+    networks:
+      - matrix_net
+
+  # ─── Matrix Homeserver: Lightweight Profile (Conduwuit + RocksDB) ───
+  conduwuit:
+    image: girlbossceo/conduwuit:latest
+    container_name: nexus_conduwuit
+    restart: unless-stopped
+    profiles:
+      - lite
+    environment:
+      CONDUWUIT_SERVER_NAME: ${MATRIX_SERVER_NAME:-nexus.local}
+      CONDUWUIT_DATABASE_PATH: /var/lib/conduwuit
+      CONDUWUIT_ALLOW_REGISTRATION: "true"
+      CONDUWUIT_YES_I_AM_VERY_VERY_SURE_I_WANT_AN_OPEN_REGISTRATION_SERVER_PRONE_TO_ABUSE: "true"
+      CONDUWUIT_ADDRESS: 0.0.0.0
+      CONDUWUIT_PORT: 8008
+    volumes:
+      - ./conduwuit-data:/var/lib/conduwuit
     networks:
       - matrix_net
 
   # ─── Voice/Video Infrastructure ───
-
   redis:
     image: redis:7-alpine
     container_name: nexus_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
+    networks:
+      - matrix_net
+
+  livekit:
+    image: livekit/livekit-server:v1.9.11
+    container_name: nexus_livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml --node-ip ${HOST_LAN_IP:-127.0.0.1}
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-nexus_key}: ${LIVEKIT_API_SECRET:-nexus_dev_secret_CHANGE_ME_IN_PROD}"
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml.template:/etc/livekit.yaml:ro
+    depends_on:
+      - redis
     networks:
       - matrix_net
 
@@ -48,12 +189,10 @@ services:
     ports:
       - "3001:3001"
     environment:
-      LIVEKIT_API_KEY: nexus_dev_key
-      LIVEKIT_API_SECRET: nexus_dev_secret_CHANGE_ME_IN_PROD
-      SYNAPSE_URL: http://synapse:8008
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-nexus_key}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-nexus_dev_secret_CHANGE_ME_IN_PROD}
+      SYNAPSE_URL: ${SYNAPSE_URL:-http://synapse:8008}
       PORT: 3001
-    depends_on:
-      - synapse
     networks:
       - matrix_net
 

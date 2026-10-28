@@ -1,127 +1,126 @@
 # Nexus — Encrypted Chat + Voice + Screen Share
 
-A self-hosted communication platform with **end-to-end encryption**, real-time messaging, voice chat, and screen sharing.
+A self-hosted, LAN-friendly communication platform with **end-to-end encryption**, real-time messaging, voice chat, and screen sharing.
 
-Built on **Matrix Synapse** (messaging + E2E encryption) and **LiveKit** (voice/video/screen share).
+Built on **Matrix** (**Synapse** or lightweight **Conduwuit**), **LiveKit** (voice/video/screen share), and **Caddy** (single-origin local HTTPS reverse proxy).
 
 ---
 
 ## Quick Start
 
+### 1. Standard Startup (Synapse + PostgreSQL)
+
+**Windows (PowerShell):**
 ```powershell
-# From PowerShell, in the project root:
 .\start.ps1
 ```
 
-Open **http://localhost:5173** in your browser.
+**Linux / macOS:**
+```bash
+./start.sh
+```
 
-> **First time?** The script auto-downloads LiveKit, installs npm deps, and starts everything.
-> **Requires:** Docker Desktop for Windows, Node.js
+Or directly via Docker Compose after generating `.env`:
+```bash
+docker compose up -d --build
+```
+
+Open **https://localhost** in your browser.
+
+> **First run?** The startup script automatically creates `.env` from `.env.example`, generates 32-character cryptographic secrets, detects your host LAN IP for LiveKit WebRTC, initializes the Matrix homeserver config (`synapse-init`), and launches all containers.
+
+---
+
+### 2. Lightweight Mode (`lite` profile — Raspberry Pi / Mini-PC / Low-RAM Hosts)
+
+For low-memory home lab hosts, use the **`lite`** profile powered by **Conduwuit** (Rust + embedded RocksDB in `./conduwuit-data`) instead of Python Synapse + PostgreSQL:
+
+```bash
+# In .env, set SYNAPSE_URL=http://conduwuit:8008 (or pass it inline):
+SYNAPSE_URL=http://conduwuit:8008 COMPOSE_PROFILES=lite docker compose --profile lite up -d --build
+```
+
+Or via the launcher scripts:
+```powershell
+# PowerShell
+.\start.ps1 -Profile lite
+```
+```bash
+# Linux / macOS
+./start.sh --lite
+```
 
 ---
 
 ## Architecture
 
+All browser traffic flows through **Caddy** over HTTPS on port `443`, eliminating mixed-content issues and enabling WebRTC microphone and screen-sharing APIs (`navigator.mediaDevices`) across your LAN:
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Browser (Vite)                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐ │
-│  │ MatrixService│  │LiveKitService│  │  UI Components    │ │
-│  │  (E2E crypto)│  │  (WebRTC)    │  │                   │ │
-│  └──────┬───────┘  └──────┬───────┘  └───────────────────┘ │
-└─────────┼─────────────────┼─────────────────────────────────┘
-          │                 │
-          ▼                 ▼
-  ┌───────────────┐  ┌─────────────┐  ┌──────────────────┐
-  │ Matrix Synapse│  │ Token Server│  │   LiveKit SFU    │
-  │   :8008       │  │   :3001     │  │   :7880          │
-  │  (Docker)     │  │  (Docker)   │  │  (Native)        │
-  └───────┬───────┘  └─────────────┘  └──────┬───────────┘
-          │                                   │
-          ▼                                   ▼
-  ┌───────────────┐                   ┌──────────────────┐
-  │  PostgreSQL   │                   │      Redis       │
-  │   :5432       │                   │      :6379       │
-  └───────────────┘                   └──────────────────┘
-```
-
-### Server Side (Docker + Native)
-
-| Service | URL | Role |
-|---------|-----|------|
-| **Matrix Synapse** | http://localhost:8008 | Messaging, rooms, user auth |
-| **PostgreSQL** | localhost:5432 | Synapse database |
-| **Redis** | localhost:6379 | LiveKit coordination |
-| **Token Server** | http://localhost:3001 | Issues authenticated LiveKit tokens |
-| **LiveKit SFU** | ws://localhost:7880 | Voice, video, screen share (native Windows) |
-
-### Client Side (Vite)
-
-| Component | Purpose |
-|-----------|---------|
-| **MatrixService** | Auth, sync, rooms, messaging, E2E encryption |
-| **LiveKitService** | Voice, screen share, WebRTC |
-| **AppLayout** | Three-panel layout orchestrator |
-| **ChatView** | Message display and input |
-| **RoomSidebar** | Room list, create/join/browse |
-| **VoiceControls** | Mute, deafen, screen share, disconnect |
-
----
-
-## Security
-
-- **🔒 E2E Encryption** — All new rooms use Megolm encryption (`m.megolm.v1.aes-sha2`). Messages are encrypted client-side before reaching the server.
-- **🔑 Token Auth** — Voice tokens require a valid Matrix session. The token server verifies credentials against Synapse before issuing LiveKit access tokens.
-- **🗄️ Key Storage** — Encryption keys are stored in the browser's IndexedDB via the Rust crypto WASM backend.
-
----
-
-## Register Users
-
-```powershell
-# Create an admin account
-docker exec -it synapse register_new_matrix_user http://localhost:8008 -c /data/homeserver.yaml -a
-
-# Create a regular user
-docker exec -it synapse register_new_matrix_user http://localhost:8008 -c /data/homeserver.yaml --no-admin
+┌─────────────────────────────────────────────────────────────────┐
+│                     Browser (https://<host>)                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
+│  │ MatrixService│  │LiveKitService│  │     UI Components     │  │
+│  │  (E2E crypto)│  │   (WebRTC)   │  │                       │  │
+│  └──────┬───────┘  └──────┬───────┘  └───────────┬───────────┘  │
+└─────────┼─────────────────┼──────────────────────┼──────────────┘
+          │ /_matrix/*      │ /livekit/*  /api/*   │ /*
+          ▼                 ▼                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Caddy Reverse Proxy (:443 HTTPS)                │
+└───────┬───────────────────┬──────────────┬──────────────┬───────┘
+        │                   │              │              │
+        ▼                   ▼              ▼              ▼
+┌───────────────┐   ┌──────────────┐ ┌───────────┐ ┌──────────────┐
+│ Matrix Server │   │ LiveKit SFU  │ │Token Srv  │ │ Client Nginx │
+│ Synapse :8008 │   │ :7880 / :7882│ │   :3001   │ │     :80      │
+│ or Conduwuit  │   └───────┬──────┘ └───────────┘ └──────────────┘
+└───────┬───────┘           │
+        │                   ▼
+        ▼           ┌──────────────┐
+┌───────────────┐   │    Redis     │
+│  PostgreSQL   │   │    :6379     │
+└───────────────┘   └──────────────┘
 ```
 
 ---
 
-## Features
+## Connecting from Other Devices on Your LAN
 
-- **💬 Encrypted Messaging** — Real-time chat with E2E encryption, message grouping, timestamps
-- **📢 Public Rooms** — Create rooms visible to all users on the server
-- **🎙️ Voice Chat** — Click the phone icon on any room to enter voice
-- **🖥️ Screen Share** — Share your screen with everyone in the voice call
-- **🔇 Mute / Deafen** — Discord-style audio controls
-- **🔒 Encryption Indicators** — Lock icons show which rooms are encrypted
+Browsers require a secure context (`https://`) on non-`localhost` origins before allowing microphone capture (`getUserMedia`) or screen sharing (`getDisplayMedia`).
 
----
+1. **Set your LAN IP or hostname in `.env`:**
+   ```ini
+   NEXUS_DOMAIN=192.168.1.50
+   HOST_LAN_IP=192.168.1.50
+   NEXUS_TLS_MODE=internal
+   ```
+   Restart Caddy and LiveKit:
+   ```bash
+   docker compose up -d caddy livekit
+   ```
 
-## Project Structure
+2. **Trust the Caddy Local Root CA on LAN client devices:**
+   Caddy generates its local root certificate at:
+   ```
+   ./caddy-data/caddy/pki/authorities/local/root.crt
+   ```
+   Copy `root.crt` to your other LAN devices and add it to their trust store:
+   - **Windows:** Double-click `root.crt` → *Install Certificate* → *Local Machine* → *Place all certificates in the following store* → *Trusted Root Certification Authorities*.
+   - **macOS:** Double-click `root.crt` to add to *Keychain Access* → *System*, then open the certificate and set *When using this certificate* to *Always Trust*.
+   - **Linux (Ubuntu/Debian):**
+     ```bash
+     sudo cp root.crt /usr/local/share/ca-certificates/nexus-caddy-root.crt
+     sudo update-ca-certificates
+     ```
+   - **iOS / Android:** Transfer `root.crt` to the device, install the CA profile in system settings, and enable full trust for root certificates (iOS: *Settings → General → About → Certificate Trust Settings*).
 
-```
-DiscordAlt/
-├── clientApp/               # Client application (Vite)
-│   ├── src/
-│   │   ├── components/      # UI components
-│   │   ├── services/        # MatrixService, LiveKitService
-│   │   ├── utils/           # config, format, avatars, icons, time
-│   │   ├── styles/          # CSS modules
-│   │   └── main.js          # Entry point
-│   └── package.json
-├── tokenServer/             # Token server (Express, Docker)
-│   ├── server.js
-│   ├── Dockerfile
-│   └── package.json
-├── synapse-data/            # Synapse config (mounted into Docker)
-├── docker-compose.yml       # Synapse, PostgreSQL, Redis, Token Server
-└── start.ps1                # One-command full-stack launcher (PowerShell)
-```
+3. **Open `https://<NEXUS_DOMAIN>`** from any device on your LAN. The client automatically resolves Matrix (`https://<host>`), Token Server (`https://<host>/api`), and LiveKit (`wss://<host>/livekit`) from `window.location`.
 
 ---
 
 ## Stop Everything
 
-Press **Ctrl+C** in the PowerShell window running `start.ps1`. It automatically stops LiveKit and Docker services.
+```bash
+docker compose down
+```

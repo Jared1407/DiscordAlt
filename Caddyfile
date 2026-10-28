@@ -1,0 +1,25 @@
+https://{$NEXUS_DOMAIN:localhost} {
+	tls {$NEXUS_TLS_MODE:internal}
+
+	# Matrix Client-Server & Synapse APIs
+	@matrix path /_matrix/* /_synapse/client/*
+	handle @matrix {
+		reverse_proxy {$SYNAPSE_URL:http://synapse:8008}
+	}
+
+	# Token Server API (/api/token -> /token, /api/health -> /health)
+	handle_path /api/* {
+		reverse_proxy token-server:3001
+	}
+
+	# LiveKit Signaling WebSocket & HTTP (/livekit/* -> /*)
+	handle /livekit* {
+		uri strip_prefix /livekit
+		reverse_proxy livekit:7880
+	}
+
+	# Containerized Client App (SPA)
+	handle {
+		reverse_proxy client:80
+	}
+}

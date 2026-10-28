@@ -1,6 +1,7 @@
 import { matrixService } from '../services/MatrixService.js';
+import { config } from '../utils/config.js';
 import { Icons } from '../utils/icons.js';
-import { escapeHtml } from '../utils/format.js';
+import { escapeHtml, escapeAttr } from '../utils/format.js';
 
 /**
  * Login component — handles login and registration with tabs
@@ -11,6 +12,8 @@ export function renderLogin(container, onSuccess) {
   let error = '';
 
   function render() {
+    const defaultHomeserver = matrixService.homeserverUrl || config.matrixUrl;
+
     container.innerHTML = `
       <div class="login-wrapper">
         <div class="login-card">
@@ -37,7 +40,7 @@ export function renderLogin(container, onSuccess) {
             <div class="form-group server-url-group">
               <label class="form-group__label">Homeserver URL</label>
               <input class="form-group__input" type="text" id="serverUrl"
-                     value="${matrixService.homeserverUrl}" placeholder="https://matrix.example.com" />
+                     value="${escapeAttr(defaultHomeserver)}" placeholder="https://matrix.example.com" />
             </div>
 
             <div class="form-group">
@@ -84,7 +87,7 @@ export function renderLogin(container, onSuccess) {
     e.preventDefault();
     if (loading) return;
 
-    const serverUrl = container.querySelector('#serverUrl').value.trim();
+    const serverUrl = container.querySelector('#serverUrl').value.trim() || config.matrixUrl;
     const username = container.querySelector('#username').value.trim();
     const password = container.querySelector('#password').value;
 
@@ -119,4 +122,3 @@ export function renderLogin(container, onSuccess) {
 
   render();
 }
-
