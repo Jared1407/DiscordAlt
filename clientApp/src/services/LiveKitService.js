@@ -45,7 +45,7 @@ class LiveKitService {
      * Request a LiveKit access token from the token server.
      * Sends the Matrix access token for authentication.
      */
-    async _getToken(roomName, participantName) {
+    async _getToken(roomName) {
         const headers = { 'Content-Type': 'application/json' };
 
         // Attach Matrix auth token if available
@@ -60,15 +60,24 @@ class LiveKitService {
         const res = await fetch(`${this.tokenServerUrl}/token`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ roomName, participantName }),
+            body: JSON.stringify({ roomName }),
         });
-        if (!res.ok) throw new Error('Failed to get token');
+        if (!res.ok) {
+            let errMsg = `Failed to get token (HTTP ${res.status})`;
+            try {
+                const errData = await res.json();
+                if (errData?.error) errMsg = errData.error;
+            } catch { /* ignore */ }
+            const err = new Error(errMsg);
+            err.status = res.status;
+            throw err;
+        }
         const data = await res.json();
         return data.token;
     }
 
     // ─── Connect / Disconnect ───
-    async joinVoice(roomName, userName) {
+    async joinVoice(roomName) {
         if (this.connected) {
             await this.leaveVoice();
         }
@@ -80,7 +89,7 @@ class LiveKitService {
             try {
                 this._emit('connecting', { attempt, maxRetries: MAX_RETRIES });
 
-                const token = await this._getToken(roomName, userName);
+                const token = await this._getToken(roomName);
 
                 this.room = new Room({
                     adaptiveStream: true,
@@ -123,10 +132,12 @@ class LiveKitService {
                     this.room = null;
                 }
 
-                if (attempt < MAX_RETRIES) {
+                // Do not retry client/authorization errors (4xx)
+                const isClientError = err?.status >= 400 && err?.status < 500;
+                if (!isClientError && attempt < MAX_RETRIES) {
                     await new Promise(r => setTimeout(r, RETRY_DELAY));
                 } else {
-                    console.error('Failed to join voice after all retries:', err);
+                    console.error('Failed to join voice:', err);
                     this._emit('error', err.message);
                     return false;
                 }

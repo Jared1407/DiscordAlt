@@ -177,6 +177,19 @@ export function appendMessage(container, message) {
   }
 }
 
+/**
+ * Replace the body of an already-rendered message (e.g. once it finishes decrypting)
+ */
+export function updateMessage(container, message) {
+  const bodies = container.querySelectorAll('.message-body[data-event-id]');
+  for (const el of bodies) {
+    if (el.dataset.eventId === message.id) {
+      el.innerHTML = escapeHtml(message.body || '');
+      return;
+    }
+  }
+}
+
 function renderWelcome(roomName) {
   return `
     <div class="welcome-message">
@@ -241,7 +254,7 @@ function createNewGroupHtml(msg) {
           <span class="message-header__sender" style="color: ${color}">${escapeHtml(senderName)}</span>
           <span class="message-header__time">${time}</span>
         </div>
-        <div class="message-body">${escapeHtml(msg.body || '')}</div>
+        <div class="message-body" data-event-id="${escapeAttr(msg.id)}">${escapeHtml(msg.body || '')}</div>
       </div>
     </div>
   `;
@@ -254,7 +267,7 @@ function createGroupedMessageHtml(msg) {
     <div class="message-group" data-sender="${escapeAttr(msg.sender)}">
       <div class="message-inline-time">${time}</div>
       <div class="message-group__content">
-        <div class="message-body">${escapeHtml(msg.body || '')}</div>
+        <div class="message-body" data-event-id="${escapeAttr(msg.id)}">${escapeHtml(msg.body || '')}</div>
       </div>
     </div>
   `;
