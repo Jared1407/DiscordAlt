@@ -4,9 +4,10 @@ import { getAvatarColor, getInitials } from '../utils/avatars.js';
 import { Icons } from '../utils/icons.js';
 import { escapeHtml, formatName } from '../utils/format.js';
 import { renderRoomSidebar } from './RoomSidebar.js';
-import { renderChatView, appendMessage } from './ChatView.js';
+import { renderChatView, appendMessage, updateMessage } from './ChatView.js';
 import { renderMemberList } from './MemberList.js';
 import { renderScreenShareView } from './ScreenShareView.js';
+import { renderVoiceControls } from './VoiceControls.js';
 
 /**
  * AppLayout — Main three-panel layout orchestrator
@@ -40,6 +41,18 @@ export function renderApp(container) {
       onJoinVoice: joinVoice,
       activeRoomId,
     });
+  }
+
+  /**
+   * Re-render only the voice widgets (sidebar voice bar + top voice area)
+   * without rebuilding the entire room list or refetching public rooms.
+   */
+  function renderVoiceWidgets() {
+    const voiceControlsSlot = sidebarSlot.querySelector('#voiceControlsSlot');
+    if (voiceControlsSlot) {
+      renderVoiceControls(voiceControlsSlot);
+    }
+    renderVoiceArea();
   }
 
   function renderChat() {
@@ -139,35 +152,38 @@ export function renderApp(container) {
     renderVoiceArea();
   }
 
-  async function joinVoice(roomId, roomName) {
-    const userName = matrixService.userId || 'user';
-
+  async function joinVoice(roomId) {
     voiceAreaSlot.innerHTML = `
         <div class="voice-area" style="justify-content:center; padding: 12px;">
           <div class="spinner" style="margin-right: 8px;"></div>
           <span id="voice-connect-status" style="color: var(--text-secondary); font-size: var(--font-sm);">Joining Voice Chat...</span>
         </div>`;
 
-    // Listen for retry status updates
+    let lastError = null;
     const connectingHandler = ({ attempt, maxRetries }) => {
       const status = voiceAreaSlot.querySelector('#voice-connect-status');
       if (status && attempt > 1) {
         status.textContent = `Joining Voice Chat... (attempt ${attempt}/${maxRetries})`;
       }
     };
-    liveKitService.on('connecting', connectingHandler);
+    const errorHandler = (msg) => { lastError = msg; };
 
-    const success = await liveKitService.joinVoice(roomId, userName);
+    liveKitService.on('connecting', connectingHandler);
+    liveKitService.on('error', errorHandler);
+
+    const success = await liveKitService.joinVoice(roomId);
     liveKitService.off('connecting', connectingHandler);
+    liveKitService.off('error', errorHandler);
 
     if (success) {
       renderSidebar();
       renderVoiceArea();
     } else {
+      const reason = lastError ? escapeHtml(lastError) : 'Make sure the LiveKit server is running.';
       voiceAreaSlot.innerHTML = `
             <div class="voice-area" style="background: rgba(243,90,90,0.1); border-color: rgba(243,90,90,0.25);">
               <span style="color: var(--danger); font-size: var(--font-sm); padding: 10px 16px;">
-                Failed to connect to voice. Make sure the LiveKit server is running.
+                Failed to connect to voice: ${reason}
               </span>
             </div>`;
       setTimeout(() => { voiceAreaSlot.innerHTML = ''; }, 4000);
@@ -184,6 +200,9 @@ export function renderApp(container) {
     if (msg.roomId === activeRoomId) appendMessage(chatSlot, msg);
     renderSidebar();
   }
+  function handleMessageUpdated(msg) {
+    if (msg.roomId === activeRoomId) updateMessage(chatSlot, msg);
+  }
   function handleRoomsChanged() {
     renderSidebar();
     const rooms = matrixService.getRooms();
@@ -199,15 +218,16 @@ export function renderApp(container) {
   }
 
   matrixService.on('message', handleMessage);
+  matrixService.on('messageUpdated', handleMessageUpdated);
   matrixService.on('roomsChanged', handleRoomsChanged);
   matrixService.on('logout', handleLogout);
 
   // ─── LiveKit events ───
   function handleVoiceConnected() { renderSidebar(); renderVoiceArea(); }
   function handleVoiceDisconnected() { renderSidebar(); renderVoiceArea(); renderScreenShare(); }
-  function handleParticipantsChanged() { renderSidebar(); renderVoiceArea(); }
-  function handleMuteChanged() { renderSidebar(); renderVoiceArea(); }
-  function handleDeafenChanged() { renderSidebar(); renderVoiceArea(); }
+  function handleParticipantsChanged() { renderVoiceWidgets(); }
+  function handleMuteChanged() { renderVoiceWidgets(); }
+  function handleDeafenChanged() { renderVoiceWidgets(); }
   function handleScreenShareChanged() { renderSidebar(); renderVoiceArea(); renderScreenShare(); }
   function handleScreenShareStarted() { renderScreenShare(); }
   function handleScreenShareStopped() { renderScreenShare(); }
@@ -223,6 +243,7 @@ export function renderApp(container) {
 
   return function cleanup() {
     matrixService.off('message', handleMessage);
+    matrixService.off('messageUpdated', handleMessageUpdated);
     matrixService.off('roomsChanged', handleRoomsChanged);
     matrixService.off('logout', handleLogout);
     liveKitService.off('connected', handleVoiceConnected);

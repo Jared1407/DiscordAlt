@@ -6,8 +6,42 @@ import { escapeHtml, escapeAttr, formatName } from '../utils/format.js';
 import { showModal } from './Modal.js';
 import { renderVoiceControls } from './VoiceControls.js';
 
+// ─── Public rooms directory cache (avoids refetching on every sidebar render) ───
+const PUBLIC_ROOMS_TTL_MS = 60_000;
+let publicRoomsCache = {
+  rooms: null,
+  fetchedAt: 0,
+  inflight: null,
+};
+
+export function invalidatePublicRoomsCache() {
+  publicRoomsCache.rooms = null;
+  publicRoomsCache.fetchedAt = 0;
+}
+
+async function fetchPublicRoomsCached(force = false) {
+  const now = Date.now();
+  if (!force && publicRoomsCache.rooms && (now - publicRoomsCache.fetchedAt) < PUBLIC_ROOMS_TTL_MS) {
+    return publicRoomsCache.rooms;
+  }
+  if (!force && publicRoomsCache.inflight) {
+    return publicRoomsCache.inflight;
+  }
+  const promise = matrixService.getPublicRooms().then(rooms => {
+    publicRoomsCache.rooms = rooms;
+    publicRoomsCache.fetchedAt = Date.now();
+    publicRoomsCache.inflight = null;
+    return rooms;
+  }).catch(err => {
+    publicRoomsCache.inflight = null;
+    throw err;
+  });
+  publicRoomsCache.inflight = promise;
+  return promise;
+}
+
 /**
- * RoomSidebar — Shows joined rooms + public room directory
+ * RoomSidebar - Shows joined rooms + public room directory
  */
 export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, activeRoomId }) {
   const joinedRooms = matrixService.getRooms();
@@ -29,7 +63,7 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
       </div>
 
       <div class="room-list" id="roomList">
-        <div class="room-list__section-title">Your Rooms — ${joinedRooms.length}</div>
+        <div class="room-list__section-title">Your Rooms - ${joinedRooms.length}</div>
         ${joinedRooms.length === 0 ? `
           <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: var(--font-sm);">
             No rooms yet. Browse or create one!
@@ -122,6 +156,7 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
         const topic = backdrop.querySelector('#newRoomTopic').value.trim();
         if (!name) return;
         try {
+          invalidatePublicRoomsCache();
           await matrixService.createRoom(name, topic);
         } catch (err) {
           console.error('Failed to create room:', err);
@@ -131,13 +166,14 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
     });
   });
 
-  // Browse rooms (same as auto-load but forces a refresh)
+  // Browse rooms (forces a fresh fetch)
   container.querySelector('#browseRoomsBtn').addEventListener('click', () => {
     loadPublicRooms(container.querySelector('#publicRoomsSection'), joinedIds, onRoomSelect, true);
   });
 
   // Logout
   container.querySelector('#logoutBtn').addEventListener('click', () => {
+    invalidatePublicRoomsCache();
     matrixService.logout();
   });
 }
@@ -145,20 +181,21 @@ export function renderRoomSidebar(container, { onRoomSelect, onJoinVoice, active
 /**
  * Fetch and display public rooms the user hasn't joined yet
  */
-async function loadPublicRooms(slot, joinedIds, onRoomSelect, forceMessage = false) {
+async function loadPublicRooms(slot, joinedIds, onRoomSelect, forceRefresh = false) {
   if (!slot) return;
 
-  const publicRooms = await matrixService.getPublicRooms();
+  const publicRooms = await fetchPublicRoomsCached(forceRefresh);
+  if (!slot.isConnected) return;
   const unjoinedRooms = publicRooms.filter(r => !joinedIds.has(r.id));
 
-  if (unjoinedRooms.length === 0 && !forceMessage) {
+  if (unjoinedRooms.length === 0 && !forceRefresh) {
     slot.innerHTML = '';
     return;
   }
 
   slot.innerHTML = `
     <div class="room-list__section-title" style="margin-top: 8px;">
-      Available Rooms — ${unjoinedRooms.length}
+      Available Rooms - ${unjoinedRooms.length}
     </div>
     ${unjoinedRooms.length === 0 ? `
       <div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: var(--font-xs);">
@@ -185,6 +222,7 @@ async function loadPublicRooms(slot, joinedIds, onRoomSelect, forceMessage = fal
     item.addEventListener('click', async () => {
       const roomId = item.dataset.joinRoom;
       try {
+        invalidatePublicRoomsCache();
         await matrixService.joinRoom(roomId);
         onRoomSelect(roomId);
       } catch (err) {
@@ -194,4 +232,3 @@ async function loadPublicRooms(slot, joinedIds, onRoomSelect, forceMessage = fal
     });
   });
 }
-

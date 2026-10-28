@@ -20,9 +20,12 @@ export function escapeAttr(text) {
 }
 
 /**
- * Format a Matrix user ID (@user:server) into a display name
+ * Format a Matrix user ID (@user:server) or display name into a clean label
  */
 export function formatName(name) {
     if (!name) return 'Unknown';
-    return name.replace(/^@/, '').split(':')[0];
+    if (name.startsWith('@')) {
+        return name.slice(1).split(':')[0];
+    }
+    return name;
 }
