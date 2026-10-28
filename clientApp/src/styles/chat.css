@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════
-   Chat View — Messages, Input, Timestamps
+   Chat View — Messages, Media, Markdown, Input
    ═══════════════════════════════════════════════════ */
 
 /* ─── Messages Container ─── */
@@ -131,12 +131,13 @@
     color: var(--text-muted);
 }
 
-/* ─── Message Body ─── */
+/* ─── Message Body & Markdown ─── */
 .message-body {
     font-size: var(--font-md);
     line-height: 1.5;
     color: var(--text-primary);
     word-break: break-word;
+    white-space: pre-wrap;
 }
 
 .message-body code {
@@ -145,6 +146,143 @@
     border-radius: var(--radius-sm);
     font-family: 'Fira Code', 'Consolas', monospace;
     font-size: 0.875em;
+}
+
+.message-code-block {
+    margin: 6px 0;
+    padding: var(--sp-3);
+    background: var(--bg-darkest);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.message-code-block code {
+    padding: 0;
+    background: transparent;
+    font-size: var(--font-sm);
+    color: var(--text-primary);
+}
+
+/* ─── Rich Media & File Attachments ─── */
+.message-attachment {
+    margin-top: 6px;
+}
+
+.message-image {
+    max-width: min(440px, 100%);
+    max-height: 340px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    object-fit: contain;
+    background: var(--bg-darkest);
+}
+
+.message-video {
+    max-width: min(480px, 100%);
+    max-height: 340px;
+    border-radius: var(--radius-md);
+    background: #000;
+}
+
+.message-audio {
+    width: min(360px, 100%);
+    margin-top: 4px;
+}
+
+.message-file-card {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: 6px;
+    padding: 10px 14px;
+    min-width: 240px;
+    max-width: min(420px, 100%);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.message-file-card:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    text-decoration: none;
+}
+
+.message-file-card__icon,
+.message-file-card__download {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+.message-file-card__icon svg,
+.message-file-card__download svg {
+    width: 22px;
+    height: 22px;
+}
+
+.message-file-card__info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.message-file-card__name {
+    font-size: var(--font-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-file-card__size {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+}
+
+/* ─── Drag-and-Drop Overlay ─── */
+.drop-zone-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 13, 19, 0.78);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    pointer-events: none;
+}
+
+.drop-zone-overlay--active {
+    display: flex;
+}
+
+.drop-zone-overlay__box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-6) var(--sp-8);
+    border: 2px dashed var(--accent-primary);
+    border-radius: var(--radius-xl);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.drop-zone-overlay__box svg {
+    width: 36px;
+    height: 36px;
+    color: var(--accent-primary);
 }
 
 /* ─── Welcome Message ─── */
@@ -186,6 +324,18 @@
     flex-shrink: 0;
 }
 
+.message-upload-status {
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    border-radius: var(--radius-md);
+    background: var(--accent-muted);
+    color: var(--accent-hover);
+    font-size: var(--font-xs);
+    font-weight: 600;
+}
+
 .message-input {
     display: flex;
     align-items: flex-end;
@@ -199,6 +349,28 @@
 
 .message-input:focus-within {
     border-color: var(--accent-primary);
+}
+
+.message-input__attach {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.message-input__attach:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.message-input__attach svg {
+    width: 18px;
+    height: 18px;
 }
 
 .message-input__field {

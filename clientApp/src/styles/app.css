@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════
-   App Layout — Three-panel design
+   App Layout — Four-panel design (Server Rail + Sidebar + Chat + Members)
    ═══════════════════════════════════════════════════ */
 
 .app-layout {
@@ -9,10 +9,126 @@
     animation: fadeIn 0.4s ease-out;
 }
 
+/* ─── Discord-style Server Rail (Matrix Spaces) ─── */
+.server-rail {
+    width: 72px;
+    min-width: 72px;
+    height: 100vh;
+    background: var(--bg-darkest);
+    border-right: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--sp-3) 0;
+    gap: var(--sp-2);
+    overflow-y: auto;
+    user-select: none;
+}
+
+.server-rail__divider {
+    width: 32px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--border-default);
+    margin: 2px 0;
+    flex-shrink: 0;
+}
+
+.server-rail__list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+}
+
+.server-rail__item {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-radius var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.server-rail__item:hover,
+.server-rail__item--active {
+    border-radius: 16px;
+    color: #fff;
+}
+
+.server-rail__item--home:hover,
+.server-rail__item--home.server-rail__item--active {
+    background: var(--accent-primary);
+}
+
+.server-rail__item--action {
+    color: var(--status-online);
+}
+
+.server-rail__item--action:hover {
+    background: var(--status-online);
+    color: #0b0d13;
+}
+
+.server-rail__pill {
+    position: absolute;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 0;
+    border-radius: 0 4px 4px 0;
+    background: var(--text-primary);
+    transition: height var(--transition-fast);
+}
+
+.server-rail__item:hover .server-rail__pill {
+    height: 20px;
+}
+
+.server-rail__item--active .server-rail__pill {
+    height: 36px;
+    background: var(--accent-primary);
+}
+
+.server-rail__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.server-rail__icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.server-rail__initials {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: var(--font-sm);
+    transition: background var(--transition-fast);
+}
+
+.server-rail__item:hover .server-rail__initials {
+    background: var(--space-color, var(--accent-primary));
+}
+
 /* ─── Room Sidebar ─── */
 .sidebar {
     width: var(--sidebar-width);
     min-width: var(--sidebar-width);
+    height: 100vh;
     background: var(--bg-dark);
     border-right: 1px solid var(--border-subtle);
     display: flex;
@@ -79,6 +195,11 @@
     color: var(--text-muted);
 }
 
+.room-entry {
+    display: flex;
+    flex-direction: column;
+}
+
 .room-item {
     display: flex;
     align-items: center;
@@ -108,6 +229,11 @@
     height: 70%;
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     background: var(--accent-primary);
+}
+
+.room-item--unread .room-item__name {
+    font-weight: 700;
+    color: #fff;
 }
 
 .room-item__icon {
@@ -251,6 +377,7 @@
 
 /* ─── Main Content Area ─── */
 .main-content {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;

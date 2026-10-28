@@ -3,6 +3,7 @@ import { liveKitService } from '../services/LiveKitService.js';
 import { getAvatarColor, getInitials } from '../utils/avatars.js';
 import { Icons } from '../utils/icons.js';
 import { escapeHtml, formatName } from '../utils/format.js';
+import { renderServerRail } from './ServerRail.js';
 import { renderRoomSidebar } from './RoomSidebar.js';
 import { renderChatView, appendMessage, updateMessage } from './ChatView.js';
 import { renderMemberList } from './MemberList.js';
@@ -10,14 +11,16 @@ import { renderScreenShareView } from './ScreenShareView.js';
 import { renderVoiceControls } from './VoiceControls.js';
 
 /**
- * AppLayout — Main three-panel layout orchestrator
+ * AppLayout — Main four-panel layout orchestrator (Server Rail + Room Sidebar + Chat + Members)
  */
 export function renderApp(container) {
+  let activeSpaceId = null;
   let activeRoomId = null;
   let membersVisible = true;
 
   container.innerHTML = `
     <div class="app-layout">
+      <div id="serverRailSlot"></div>
       <div id="sidebarSlot"></div>
       <div id="chatColumn" style="flex:1; display:flex; flex-direction:column; min-width:0;">
         <div id="voiceAreaSlot"></div>
@@ -28,6 +31,7 @@ export function renderApp(container) {
     </div>
   `;
 
+  const serverRailSlot = container.querySelector('#serverRailSlot');
   const sidebarSlot = container.querySelector('#sidebarSlot');
   const chatSlot = container.querySelector('#chatSlot');
   const memberSlot = container.querySelector('#memberSlot');
@@ -35,11 +39,19 @@ export function renderApp(container) {
   const voiceAreaSlot = container.querySelector('#voiceAreaSlot');
 
   // ─── Render functions ───
+  function renderRail() {
+    renderServerRail(serverRailSlot, {
+      activeSpaceId,
+      onSelectSpace: selectSpace,
+    });
+  }
+
   function renderSidebar() {
     renderRoomSidebar(sidebarSlot, {
       onRoomSelect: selectRoom,
       onJoinVoice: joinVoice,
       activeRoomId,
+      activeSpaceId,
     });
   }
 
@@ -87,13 +99,18 @@ export function renderApp(container) {
     }
 
     const participants = liveKitService.getParticipants();
+    const rawName = liveKitService.currentRoomDisplayName || liveKitService.currentRoomName || '';
+    const resolvedRoom = matrixService.getRooms().find(r => r.id === liveKitService.currentRoomName);
+    const displayName = (!rawName || rawName.startsWith('!'))
+      ? (resolvedRoom?.name || 'Voice Channel')
+      : rawName;
 
     voiceAreaSlot.innerHTML = `
         <div class="voice-area">
           <div class="voice-area__header">
             <div class="voice-area__info">
               <span class="voice-area__dot"></span>
-              <span class="voice-area__title">Voice Connected</span>
+              <span class="voice-area__title">Voice Connected — #${escapeHtml(displayName)}</span>
               <span class="voice-area__count">${participants.length} participant${participants.length !== 1 ? 's' : ''}</span>
             </div>
             <div class="voice-area__controls">
@@ -143,27 +160,37 @@ export function renderApp(container) {
     voiceAreaSlot.querySelector('#va-disconnect')?.addEventListener('click', () => liveKitService.leaveVoice());
   }
 
+  function selectSpace(spaceId) {
+    if (activeSpaceId === spaceId) return;
+    activeSpaceId = spaceId;
+    renderRail();
+    renderSidebar();
+  }
+
   function selectRoom(roomId) {
     if (activeRoomId === roomId) return;
     activeRoomId = roomId;
+    matrixService.markRoomRead(roomId);
     renderSidebar();
     renderChat();
     renderMembers();
     renderVoiceArea();
   }
 
-  async function joinVoice(roomId) {
+  async function joinVoice(roomId, roomName) {
+    const resolvedName = roomName || matrixService.getRooms().find(r => r.id === roomId)?.name || roomId;
+
     voiceAreaSlot.innerHTML = `
         <div class="voice-area" style="justify-content:center; padding: 12px;">
           <div class="spinner" style="margin-right: 8px;"></div>
-          <span id="voice-connect-status" style="color: var(--text-secondary); font-size: var(--font-sm);">Joining Voice Chat...</span>
+          <span id="voice-connect-status" style="color: var(--text-secondary); font-size: var(--font-sm);">Joining #${escapeHtml(resolvedName)} Voice...</span>
         </div>`;
 
     let lastError = null;
     const connectingHandler = ({ attempt, maxRetries }) => {
       const status = voiceAreaSlot.querySelector('#voice-connect-status');
       if (status && attempt > 1) {
-        status.textContent = `Joining Voice Chat... (attempt ${attempt}/${maxRetries})`;
+        status.textContent = `Joining #${resolvedName} Voice... (attempt ${attempt}/${maxRetries})`;
       }
     };
     const errorHandler = (msg) => { lastError = msg; };
@@ -171,7 +198,7 @@ export function renderApp(container) {
     liveKitService.on('connecting', connectingHandler);
     liveKitService.on('error', errorHandler);
 
-    const success = await liveKitService.joinVoice(roomId);
+    const success = await liveKitService.joinVoice(roomId, resolvedName);
     liveKitService.off('connecting', connectingHandler);
     liveKitService.off('error', errorHandler);
 
@@ -190,20 +217,26 @@ export function renderApp(container) {
     }
   }
 
-  // ─── Initial render ───
+  // ─── Initial render & background voice polling ───
+  renderRail();
   renderSidebar();
   renderChat();
   renderMembers();
+  liveKitService.startVoiceStatusPolling(5000);
 
   // ─── Matrix events ───
   function handleMessage(msg) {
-    if (msg.roomId === activeRoomId) appendMessage(chatSlot, msg);
+    if (msg.roomId === activeRoomId) {
+      appendMessage(chatSlot, msg);
+      matrixService.markRoomRead(activeRoomId);
+    }
     renderSidebar();
   }
   function handleMessageUpdated(msg) {
     if (msg.roomId === activeRoomId) updateMessage(chatSlot, msg);
   }
   function handleRoomsChanged() {
+    renderRail();
     renderSidebar();
     const rooms = matrixService.getRooms();
     if (activeRoomId && !rooms.find(r => r.id === activeRoomId)) {
@@ -213,6 +246,7 @@ export function renderApp(container) {
     }
   }
   function handleLogout() {
+    liveKitService.stopVoiceStatusPolling();
     liveKitService.leaveVoice();
     location.reload();
   }
@@ -225,7 +259,8 @@ export function renderApp(container) {
   // ─── LiveKit events ───
   function handleVoiceConnected() { renderSidebar(); renderVoiceArea(); }
   function handleVoiceDisconnected() { renderSidebar(); renderVoiceArea(); renderScreenShare(); }
-  function handleParticipantsChanged() { renderVoiceWidgets(); }
+  function handleParticipantsChanged() { renderSidebar(); renderVoiceWidgets(); }
+  function handleVoiceStatusChanged() { renderSidebar(); }
   function handleMuteChanged() { renderVoiceWidgets(); }
   function handleDeafenChanged() { renderVoiceWidgets(); }
   function handleScreenShareChanged() { renderSidebar(); renderVoiceArea(); renderScreenShare(); }
@@ -235,6 +270,7 @@ export function renderApp(container) {
   liveKitService.on('connected', handleVoiceConnected);
   liveKitService.on('disconnected', handleVoiceDisconnected);
   liveKitService.on('participantsChanged', handleParticipantsChanged);
+  liveKitService.on('voiceStatusChanged', handleVoiceStatusChanged);
   liveKitService.on('muteChanged', handleMuteChanged);
   liveKitService.on('deafenChanged', handleDeafenChanged);
   liveKitService.on('screenShareChanged', handleScreenShareChanged);
@@ -242,6 +278,7 @@ export function renderApp(container) {
   liveKitService.on('screenShareStopped', handleScreenShareStopped);
 
   return function cleanup() {
+    liveKitService.stopVoiceStatusPolling();
     matrixService.off('message', handleMessage);
     matrixService.off('messageUpdated', handleMessageUpdated);
     matrixService.off('roomsChanged', handleRoomsChanged);
@@ -249,6 +286,7 @@ export function renderApp(container) {
     liveKitService.off('connected', handleVoiceConnected);
     liveKitService.off('disconnected', handleVoiceDisconnected);
     liveKitService.off('participantsChanged', handleParticipantsChanged);
+    liveKitService.off('voiceStatusChanged', handleVoiceStatusChanged);
     liveKitService.off('muteChanged', handleMuteChanged);
     liveKitService.off('deafenChanged', handleDeafenChanged);
     liveKitService.off('screenShareChanged', handleScreenShareChanged);

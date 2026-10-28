@@ -193,32 +193,105 @@
     border-radius: 1px;
 }
 
-/* ─── Join Voice Button on room items ─── */
+/* ─── Join Voice Button & Pre-Join Voice Presence in Sidebar ─── */
 .room-item__voice-btn {
-    width: 28px;
+    min-width: 28px;
     height: 28px;
-    display: flex;
+    padding: 0 6px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 4px;
     border-radius: var(--radius-sm);
     color: var(--text-muted);
+    font-size: var(--font-xs);
+    font-weight: 600;
     opacity: 0;
     transition: all var(--transition-fast);
     flex-shrink: 0;
 }
 
-.room-item:hover .room-item__voice-btn {
+.room-item:hover .room-item__voice-btn,
+.room-item__voice-btn--occupied {
     opacity: 1;
 }
 
+.room-item__voice-btn--occupied {
+    color: var(--status-online);
+    background: rgba(62, 221, 151, 0.12);
+}
+
 .room-item__voice-btn:hover {
-    background: rgba(62, 221, 151, 0.15);
+    background: rgba(62, 221, 151, 0.2);
     color: var(--status-online);
 }
 
 .room-item__voice-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
+}
+
+.room-voice-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 6px 26px;
+    padding-left: 10px;
+    border-left: 1px solid var(--border-default);
+}
+
+.room-voice-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.room-voice-user:hover {
+    background: var(--bg-hover);
+}
+
+.room-voice-user__avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.room-voice-user__name {
+    flex: 1;
+    font-size: var(--font-xs);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.room-voice-user__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--danger);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}
+
+.room-voice-user__live svg {
+    width: 10px;
+    height: 10px;
 }
 
 /* ─── Screen Share View ─── */
@@ -288,15 +361,19 @@
 .room-item__voice-count {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(62, 221, 151, 0.15);
     font-size: var(--font-xs);
+    font-weight: 600;
     color: var(--status-online);
     flex-shrink: 0;
 }
 
 .room-item__voice-count svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
 }
 
 /* ─── Voice Area (main content panel) ─── */
